@@ -255,6 +255,7 @@ final class AccountController {
             let user = try await client.me(token: token)
             apply(user: user)
             phase = .ready
+            await loadDesktops()
         } catch let error as AccountError {
             noteBan(error)
             if error.requiresReauthentication {
@@ -456,6 +457,9 @@ final class AccountController {
             loadCustomAvatar()
             onIdentityChange?()
             await onAuthenticated?()
+            // The account's computers are part of what signing in means; the
+            // screen draws them as soon as it has them.
+            await loadDesktops()
             return true
         } catch {
             let accountError = AccountError.transport(error)
@@ -632,6 +636,8 @@ final class AccountController {
     ///     sign-out, which needs no explanation.
     ///   - notice: a notice to keep showing.
     private func signOutLocally(reason: String?, notice: AccountNotice?) {
+        desktops = []
+        desktopsError = nil
         let wasPaid = session?.profile.isPaid ?? false
         store.clear()
         session = nil

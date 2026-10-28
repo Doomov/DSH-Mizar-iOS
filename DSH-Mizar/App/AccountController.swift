@@ -41,6 +41,14 @@ final class AccountController {
 
     /// The stored session, when signed in.
     private(set) var session: AccountSession?
+    /// The account's computers, as the relay last listed them.
+    ///
+    /// Empty until fetched; `desktopsError` says why when a fetch failed. The
+    /// list is the account's answer, not a cache: a computer that signed out of
+    /// the relay disappears from it.
+    private(set) var desktops: [AccountDesktop] = []
+    /// Why the last desktop listing failed, for the screen to show.
+    private(set) var desktopsError: String?
     /// What the screens use to say "signed in", "checking" or "offline".
     private(set) var phase: Phase = .idle
     /// A warning that came with a success — the device limit, for now.
@@ -464,6 +472,38 @@ final class AccountController {
     /// The server call is best effort and the local token is cleared whatever it
     /// says: a failed logout that left the phone signed in would be a phone the
     /// operator cannot hand over.
+    /// Read the account's computers and whether each is online.
+    ///
+    /// Safe to call while signed out: it clears the list instead of failing, so
+    /// a signed-out screen never shows machines from a previous session.
+    func loadDesktops() async {
+        guard let session, session.isUsable else {
+            desktops = []
+            desktopsError = nil
+            return
+        }
+        do {
+            desktops = try await client.desktops(token: session.token)
+            desktopsError = nil
+        } catch {
+            desktopsError = (error as? AccountError)?.message ?? error.localizedDescription
+        }
+    }
+
+    /// Ask one connected computer for a token this phone may use.
+    ///
+    /// - Parameter desktop: the computer, from ``desktops``.
+    /// - Returns: the room and the freshly minted token.
+    func connect(to desktop: AccountDesktop) async throws -> DesktopConnection {
+        guard let session, session.isUsable, session.token.isEmpty == false else {
+            throw AccountError(
+                code: AccountErrorCode.unauthenticated,
+                message: "Sign in before connecting to a computer.",
+            )
+        }
+        return try await client.connect(token: session.token, deviceId: desktop.deviceId)
+    }
+
     func signOut() async {
         working = true
         defer { working = false }

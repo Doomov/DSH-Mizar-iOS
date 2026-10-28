@@ -1325,6 +1325,46 @@ final class AppModel {
         }
     }
 
+    /// Open a computer the account found, with the token the relay brokered.
+    ///
+    /// The token is the same kind pairing issues, so the rest of the app only
+    /// needs a `PairedHost`: the room is the address, and the account's device
+    /// id is the local key. A later `host.info` may teach this record the
+    /// computer's own name; the key stays this account's handle for it.
+    ///
+    /// - Parameters:
+    ///   - desktop: the computer, as `/account/v1/desktops` listed it.
+    ///   - connection: the room and token `/account/v1/connect` handed back.
+    ///   - origin: the account relay's origin, without a path.
+    func openAccountDesktop(
+        _ desktop: AccountDesktop,
+        using connection: DesktopConnection,
+        at origin: URL,
+    ) async {
+        let baseURL = origin
+            .appendingPathComponent("r")
+            .appendingPathComponent(connection.room)
+            .absoluteString
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        // appendingPathComponent escapes nothing in an https URL, but trimming
+        // the trailing slash keeps it equal to a paired host's baseURL.
+        let paired = PairedHost(
+            hostId: desktop.deviceId,
+            hostName: desktop.name,
+            authority: nil,
+            deviceId: desktop.deviceId,
+            deviceToken: connection.token,
+            baseURL: baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL,
+        )
+        try? await credentials.save(paired)
+        if let index = hosts.firstIndex(where: { $0.hostId == paired.hostId }) {
+            hosts[index] = paired
+        } else {
+            hosts.append(paired)
+        }
+        await open(hostId: paired.hostId)
+    }
+
     /// Tear the live connection down without touching what is stored.
     private func disconnectCurrent() {
         if connection != nil { log.add(.connection, "closing the connection") }

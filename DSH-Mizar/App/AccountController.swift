@@ -176,6 +176,17 @@ final class AccountController {
     /// `scripts/mock-host.mjs`. The override is compiled out of release builds:
     /// a launch argument that redirects account traffic is a testing tool, not a
     /// feature.
+    /// The relay origin the account API lives on, for building room URLs.
+    ///
+    /// ``resolvedBaseURL`` is the API root (`…/account/v1`); a computer's room
+    /// hangs off the origin, so the two path components come off again.
+    static var origin: URL {
+        var url = resolvedBaseURL
+        url.deleteLastPathComponent()
+        url.deleteLastPathComponent()
+        return url
+    }
+
     static var resolvedBaseURL: URL {
         #if DEBUG
         if let override = launchAccountURL { return override }

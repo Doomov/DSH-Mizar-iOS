@@ -286,4 +286,53 @@ struct AccountClientTests {
             #expect(!error.retryable)
         }
     }
+
+    @Test("lists the account's computers")
+    func desktops() async throws {
+        let transport = ScriptedHTTPTransport()
+        await transport.on(
+            "desktops",
+            body: #"{"desktops":[{"deviceId":"d1","name":"Mac mini","model":"Mac16,10","platform":"macos","online":true,"room":"ROOM1"}]}"#,
+        )
+        let client = makeClient(transport)
+
+        let desktops = try await client.desktops(token: "sess")
+        #expect(desktops.count == 1)
+        #expect(desktops[0].id == "d1")
+        #expect(desktops[0].online)
+        #expect(desktops[0].room == "ROOM1")
+
+        let request = try #require(await transport.recorded().first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path.hasSuffix("/desktops") == true)
+        #expect(request.value(forHTTPHeaderField: "authorization") == "Bearer sess")
+    }
+
+    @Test("asks a computer for a token and reads it back")
+    func connect() async throws {
+        let transport = ScriptedHTTPTransport()
+        await transport.on("connect", body: #"{"room":"ROOM1","token":"mz_issued"}"#)
+        let client = makeClient(transport)
+
+        let connection = try await client.connect(token: "sess", deviceId: "d1")
+        #expect(connection.room == "ROOM1")
+        #expect(connection.token == "mz_issued")
+
+        let request = try #require(await transport.recorded().first)
+        #expect(request.httpMethod == "POST")
+        let body = try jsonBody(of: request)
+        #expect(body["deviceId"] as? String == "d1")
+        #expect(request.value(forHTTPHeaderField: "authorization") == "Bearer sess")
+    }
+
+    @Test("sends this install's id so the computer can keep one token per phone")
+    func clientIdHeader() async throws {
+        let transport = ScriptedHTTPTransport()
+        await transport.on("desktops", body: #"{"desktops":[]}"#)
+        let client = AccountClient(baseURL: baseURL, transport: transport, clientId: "install-1")
+        _ = try await client.desktops(token: "sess")
+        let request = try #require(await transport.recorded().first)
+        #expect(request.value(forHTTPHeaderField: "x-mizar-client-id") == "install-1")
+    }
+
 }

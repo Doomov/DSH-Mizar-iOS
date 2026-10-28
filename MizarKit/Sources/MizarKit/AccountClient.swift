@@ -52,6 +52,8 @@ public struct AccountClient: Sendable {
     /// to catch and one `code` to branch on.
     private let baseURL: URL
     private let transport: any HTTPTransport
+    /// This install's id, sent as `x-mizar-client-id` when known.
+    private let clientId: String?
 
     /// - Parameters:
     ///   - baseURL: the API root, including `/account/v1`.
@@ -59,9 +61,11 @@ public struct AccountClient: Sendable {
     public init(
         baseURL: URL = AccountClient.productionBaseURL,
         transport: any HTTPTransport = URLSessionHTTPTransport(),
+        clientId: String? = nil,
     ) {
         self.baseURL = baseURL
         self.transport = transport
+        self.clientId = clientId
     }
 
     // MARK: - Sign-in
@@ -190,6 +194,34 @@ public struct AccountClient: Sendable {
     /// - Returns: the profile.
     public func me(token: String) async throws -> AccountUser {
         try await get("me", token: token, as: UserEnvelope.self).user
+    }
+
+    /// The account's computers, and whether each can be reached now.
+    ///
+    /// - Parameter token: the bearer token.
+    /// - Returns: the desktops, in the account's device order.
+    public func desktops(token: String) async throws -> [AccountDesktop] {
+        struct Envelope: Decodable, Sendable { let desktops: [AccountDesktop] }
+        return try await get("desktops", token: token, as: Envelope.self).desktops
+    }
+
+    /// Ask a connected computer for a token this phone may use.
+    ///
+    /// The computer mints it; the relay only brokers the request. A computer
+    /// that is offline or not on this account is refused with a code.
+    ///
+    /// - Parameters:
+    ///   - token: the bearer token.
+    ///   - deviceId: the computer's device id, from ``desktops(token:)``.
+    /// - Returns: the room and the token.
+    public func connect(token: String, deviceId: String) async throws -> DesktopConnection {
+        struct Body: Encodable, Sendable { let deviceId: String }
+        return try await post(
+            "connect",
+            token: token,
+            body: Body(deviceId: deviceId),
+            as: DesktopConnection.self,
+        )
     }
 
     /// Sign this session out.
@@ -407,6 +439,9 @@ public struct AccountClient: Sendable {
         }
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+        }
+        if let clientId, !clientId.isEmpty {
+            request.setValue(clientId, forHTTPHeaderField: "x-mizar-client-id")
         }
         return request
     }

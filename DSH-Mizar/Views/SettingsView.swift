@@ -51,6 +51,8 @@ struct SettingsView: View {
     @AppStorage(Haptics.storageKey) private var hapticsEnabled = true
     /// The paid-plan explanation, from either this screen or the account screen.
     @State private var showingPlanDetail = false
+    /// The pairing sheet, kept here as a developer tool while accounts replace it.
+    @State private var showingPairing = false
     /// The preview cache, for the 文件 section. Optional because the snapshot
     /// suite renders this screen without the shell's environment around it.
     @Environment(PreviewCenter.self) private var preview: PreviewCenter?
@@ -71,6 +73,7 @@ struct SettingsView: View {
                 aboutSection
                 communitySection
                 creditsSection
+                developerSection
             }
             .navigationTitle(Text("Settings"))
             // A small window keeps its title small.
@@ -522,6 +525,27 @@ struct SettingsView: View {
     }
 
     // MARK: - 关于
+
+    /// The tools that only exist for testing or for a host without an account.
+    ///
+    /// Pairing is the old way in. Accounts replaced it for everyday use, but a
+    /// developer machine, a relay that has not been flipped to accounts, and a
+    /// UI test all still need the code path.
+    private var developerSection: some View {
+        Section {
+            Button("Pair a computer") {
+                showingPairing = true
+            }
+            .accessibilityIdentifier("settings.pair")
+        } header: {
+            Text("Developer")
+        } footer: {
+            Text("Pairing with a code is kept for development; sign in above to find your computers by account.")
+        }
+        .sheet(isPresented: $showingPairing) {
+            PairingSheet()
+        }
+    }
 
     private var aboutSection: some View {
         Section {

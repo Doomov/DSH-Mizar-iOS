@@ -179,6 +179,10 @@ struct AccountScreen: View {
     @State private var showingDelete = false
     @State private var appleFailure: String?
     @State private var avatarItem: PhotosPickerItem?
+    /// The computer whose token is being minted right now.
+    @State private var connectingDesktop: String?
+    /// Why the last connect attempt failed, for the section's footer.
+    @State private var desktopFailure: String?
     @State private var verification: VerificationChallenge?
     @State private var resetChallenge: VerificationChallenge?
     @State private var showingResetForm = false
@@ -213,6 +217,7 @@ struct AccountScreen: View {
                 profileSection
                 subscriptionSection
                 devicesSection
+                computersSection
                 redeemSection
                 signOutSection
             } else {
@@ -235,6 +240,12 @@ struct AccountScreen: View {
             // The price is read even while signed out: a subscription section
             // that shows "…" until somebody signs in reads as broken.
             await model.subscription.load()
+            if model.account.isLoggedIn {
+                await model.account.loadDesktops()
+            }
+        }
+        .refreshable {
+            await model.account.loadDesktops()
         }
         .onChange(of: mode) { _, _ in
             model.account.clearFeedback()
@@ -721,6 +732,80 @@ struct AccountScreen: View {
     }
 
     // MARK: - Redeem
+
+    /// The account's computers, and the one thing this screen can do with them.
+    ///
+    /// A computer that is offline is drawn, not hidden: "the Mac is asleep" is a
+    /// fact the operator needs, and a list that loses rows looks like the account
+    /// forgot them.
+    private var computersSection: some View {
+        Section {
+            ForEach(model.account.desktops) { desktop in
+                HStack(spacing: 12) {
+                    Image(systemName: "desktopcomputer")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(desktop.name)
+                        Text(desktop.online ? String(localized: "Online") : String(localized: "Offline"))
+                            .font(.caption)
+                            .foregroundStyle(desktop.online ? Color.accentColor : .secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if desktop.online {
+                        if connectingDesktop == desktop.deviceId {
+                            ProgressView()
+                        } else {
+                            Button("Connect") {
+                                connect(to: desktop)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("account.computer.connect.\(desktop.deviceId)")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("account.computer.\(desktop.deviceId)")
+            }
+            if model.account.desktops.isEmpty {
+                Text("No computers are signed in to this account.")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("account.computers.empty")
+            }
+        } header: {
+            Text("Computers")
+        } footer: {
+            if let desktopFailure {
+                Text(desktopFailure)
+                    .foregroundStyle(.red)
+            } else if let error = model.account.desktopsError {
+                Text(error)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Computers signed in to this account; a token is minted on connect.")
+            }
+        }
+    }
+
+    /// Mint a token on one computer and open it.
+    private func connect(to desktop: AccountDesktop) {
+        connectingDesktop = desktop.deviceId
+        desktopFailure = nil
+        Task {
+            defer { connectingDesktop = nil }
+            do {
+                let connection = try await model.account.connect(to: desktop)
+                await model.openAccountDesktop(
+                    desktop,
+                    using: connection,
+                    at: AccountController.origin,
+                )
+            } catch let error as AccountError {
+                desktopFailure = error.message
+            } catch {
+                desktopFailure = error.localizedDescription
+            }
+        }
+    }
 
     private var redeemSection: some View {
         Section {

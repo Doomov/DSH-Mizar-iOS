@@ -672,6 +672,10 @@ class AppFlowTestBase: XCTestCase {
         // of launching, and the splash covers the screen until the first read
         // lands. The operator sees it; the tests do not.
         arguments += ["-mizarSkipSplash"]
+        // The fixture answers on a direct address, and the app's transport
+        // switches default to off -- without this every test lands on "The
+        // transport switches are off" instead of a conversation.
+        arguments += ["-mizarDirectConnection"]
         return arguments
     }
 

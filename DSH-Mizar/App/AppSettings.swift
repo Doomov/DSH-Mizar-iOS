@@ -65,7 +65,18 @@ final class AppSettings {
     var localNetworkFirst: Bool { values.localNetworkFirst }
 
     /// Whether a reconnect may try the punched direct path.
-    var directConnection: Bool { values.directConnection }
+    ///
+    /// The fixture a UI test runs against is reached over loopback, and this
+    /// switch defaults to off -- so a launch that pairs with `-mizarPairURI`
+    /// landed on "The transport switches are off" and could never open a
+    /// conversation. The flag is the launch saying it wants the direct route;
+    /// the operator's own switch is untouched when it is absent. Read here
+    /// rather than written in `init`, because a mutation inside the initialiser
+    /// does not reach storage (the observer that saves it has not been armed
+    /// yet) -- which is why the first version of this changed nothing.
+    var directConnection: Bool {
+        values.directConnection || ProcessInfo.processInfo.arguments.contains("-mizarDirectConnection")
+    }
 
     /// Whether a send into a running turn is handed over as guidance at once.
     ///

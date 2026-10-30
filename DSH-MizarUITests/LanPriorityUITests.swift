@@ -218,6 +218,10 @@ final class LanPriorityUITests: XCTestCase {
             "-mizarPairURI", Self.mockPairingURI,
             "-mizarFreshStart",
             "-mizarSkipPermissionPrompts", "-mizarSkipLoginGate", "-mizarCreditsFixture",
+            // The fixture answers on a direct address; the transport switches
+            // default to off, and without this the app lands on "The transport
+            // switches are off" instead of a conversation.
+            "-mizarDirectConnection", "-mizarSkipSplash",
             "-mizarAccountFreshStart",
             "-mizarAccountURL", Self.mockBaseURL,
             "-AppleLanguages", "(en)",

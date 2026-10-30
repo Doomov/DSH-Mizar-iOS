@@ -204,6 +204,10 @@ final class PreviewPaneUITests: XCTestCase {
             "-mizarPairURI", Self.mockPairingURI,
             "-mizarFreshStart",
             "-mizarSkipPermissionPrompts", "-mizarSkipLoginGate", "-mizarCreditsFixture",
+            // The fixture answers on a direct address; the transport switches
+            // default to off, and without this the app lands on "The transport
+            // switches are off" instead of a conversation.
+            "-mizarDirectConnection", "-mizarSkipSplash",
             "-mizarAccountFreshStart",
             // The fixture is on 127.0.0.1, which the real rule excludes from
             // "local"; without this the preview page correctly says the plan

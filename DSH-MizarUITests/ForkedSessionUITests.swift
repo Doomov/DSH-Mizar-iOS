@@ -220,7 +220,7 @@ final class ForkedSessionUITests: XCTestCase {
             // The fixture answers on a direct address; the transport switches
             // default to off, and without this the app lands on "The transport
             // switches are off" instead of a conversation.
-            "-mizarDirectConnection", "-mizarSkipSplash",
+            "-mizarDirectConnection", "-mizarLocalNetworkRoute", "-mizarSkipSplash",
             "-mizarAccountFreshStart",
             "-mizarAccountURL", Self.mockBaseURL,
             "-AppleLanguages", "(en)",

@@ -125,7 +125,7 @@ final class ActivityUITests: XCTestCase {
             // The fixture answers on a direct address; the transport switches
             // default to off, and without this the app lands on "The transport
             // switches are off" instead of a conversation.
-            "-mizarDirectConnection", "-mizarLocalNetwork", "-mizarSkipSplash",
+            "-mizarDirectConnection", "-mizarLocalNetworkRoute", "-mizarSkipSplash",
             "-mizarAccountURL", Self.mockAccountURL,
             "-mizarAccountFreshStart",
             "-AppleLanguages", "(en)",

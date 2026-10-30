@@ -62,7 +62,15 @@ final class AppSettings {
     var liveActivitiesEnabled: Bool { values.liveActivitiesEnabled }
 
     /// Whether a reconnect should ask the local network before the relay.
-    var localNetworkFirst: Bool { values.localNetworkFirst }
+    ///
+    /// The switch that decides whether a `direct` route may be dialled at all
+    /// (see ``RoutePolicy``), which is why a test launch against a loopback
+    /// fixture needs it: the fixture is a `direct` endpoint and the switch
+    /// defaults to off. `-mizarLocalNetwork` is a different flag -- it reports
+    /// a LAN link for the paid-feature tests -- so this one is its own name.
+    var localNetworkFirst: Bool {
+        values.localNetworkFirst || ProcessInfo.processInfo.arguments.contains("-mizarLocalNetworkRoute")
+    }
 
     /// Whether a reconnect may try the punched direct path.
     ///

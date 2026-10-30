@@ -59,4 +59,34 @@ public struct UsageOverview: Codable, Sendable, Equatable {
     public func day(_ date: String) -> UsageDay? {
         days.first { $0.date == date }
     }
+
+    /// Several computers' histories, added up day by day.
+    ///
+    /// A day that two machines worked on is one row, the same rule the host
+    /// applies to two agents on one machine: the operator's question is "what
+    /// did I do on Tuesday", not "which machine was it".
+    ///
+    /// - Parameter readings: one overview per computer.
+    /// - Returns: the merged history, oldest day first.
+    public static func merged(_ readings: [UsageOverview]) -> UsageOverview {
+        var byDate: [String: UsageDay] = [:]
+        var sessions = 0
+        for reading in readings {
+            sessions += reading.sessions
+            for day in reading.days {
+                if let existing = byDate[day.date] {
+                    byDate[day.date] = UsageDay(
+                        date: day.date,
+                        messages: existing.messages + day.messages,
+                        inputTokens: existing.inputTokens + day.inputTokens,
+                        outputTokens: existing.outputTokens + day.outputTokens,
+                        hours: nil,
+                    )
+                } else {
+                    byDate[day.date] = day
+                }
+            }
+        }
+        return UsageOverview(sessions: sessions, days: byDate.values.sorted { $0.date < $1.date })
+    }
 }

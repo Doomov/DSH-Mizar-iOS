@@ -1094,16 +1094,76 @@ final class AppModel {
     /// Whether that read is on the socket.
     private(set) var usageLoading = false
 
-    /// Read the host's usage history for the home page.
+    /// Read the usage history for the home page, from every computer the
+    /// account knows.
     ///
-    /// Silent on failure: the chart keeps the last picture it had rather than
-    /// emptying itself because one read did not land, and the page is not the
-    /// place to report a link problem -- the connection window is.
+    /// One read per computer rather than one per app: a phone is open on one
+    /// machine at a time, but "how much did I get done" is a question about all
+    /// of them, and a chart that only counts the machine the phone happens to be
+    /// pointed at would be wrong every time the operator opened the app on the
+    /// other one.
+    ///
+    /// The reads are sequential and each one is bounded by its own handshake
+    /// timeout, so a computer that is asleep costs the page one attempt rather
+    /// than a stalled refresh. Silent on failure: the chart keeps the last
+    /// picture it had, and the connection window is where a link problem is
+    /// reported.
     func loadUsageOverview() async {
-        guard let connection, !usageLoading else { return }
+        guard !usageLoading else { return }
         usageLoading = true
         defer { usageLoading = false }
-        usageOverview = try? await connection.call("usage.overview", as: UsageOverview.self)
+
+        var readings: [UsageOverview] = []
+
+        // The computer this phone is already open on, over the socket it has.
+        if let connection,
+           let overview = try? await connection.call("usage.overview", as: UsageOverview.self) {
+            readings.append(overview)
+        }
+
+        // Every other computer the account knows, one at a time. A phone has
+        // one socket's worth of attention, and holding three open to read a
+        // chart is a cost the chart cannot justify.
+        for desktop in account.desktops
+        where desktop.online && desktop.deviceId != host?.deviceId {
+            if let overview = await usageOverview(of: desktop) {
+                readings.append(overview)
+            }
+        }
+
+        guard !readings.isEmpty else { return }
+        usageOverview = UsageOverview.merged(readings)
+    }
+
+    /// One computer's usage, over a socket of its own that is closed again.
+    ///
+    /// - Parameter desktop: the computer, as the account lists it.
+    /// - Returns: what it answered, or `nil` when it did not.
+    private func usageOverview(of desktop: AccountDesktop) async -> UsageOverview? {
+        guard let relay = URL(string: RelayTier.paidBaseURL),
+              let granted = try? await account.connect(to: desktop, engine: nil)
+        else { return nil }
+        let baseURL = relay
+            .appendingPathComponent("r")
+            .appendingPathComponent(granted.room)
+            .absoluteString
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let temporary = PairedHost(
+            hostId: desktop.deviceId,
+            hostName: desktop.name,
+            authority: nil,
+            deviceId: desktop.deviceId,
+            deviceToken: granted.token,
+            baseURL: baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL,
+        )
+        let connection = makeConnection(host: temporary, endpoint: .relay(baseURL: temporary.baseURL ?? baseURL))
+        defer { Task { await connection.disconnect() } }
+        do {
+            _ = try await connection.connect()
+            return try await connection.call("usage.overview", as: UsageOverview.self)
+        } catch {
+            return nil
+        }
     }
 
     /// Whether the poll that follows a running turn is up.

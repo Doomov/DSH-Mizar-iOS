@@ -13,6 +13,18 @@
 import Foundation
 
 /// A minimal text WebSocket.
+/// One frame off the socket.
+///
+/// Binary and text are distinct on purpose: the state channel is binary, the API
+/// is JSON, and a receive loop that collapses them into a `String?` cannot tell a
+/// state frame from a decode failure -- or from a close.
+public enum WebSocketFrame: Sendable, Equatable {
+    /// A JSON API frame.
+    case text(String)
+    /// A state-channel frame (first byte `0x53`).
+    case binary(Data)
+}
+
 public protocol WebSocketTransport: Sendable {
     /// Open the socket.
     ///
@@ -29,10 +41,10 @@ public protocol WebSocketTransport: Sendable {
     /// - Throws: when the socket is not open.
     func send(text: String) async throws
 
-    /// Await the next text frame.
-    /// - Returns: the frame body, or `nil` when the peer closed the socket.
+    /// Await the next frame.
+    /// - Returns: the frame, or `nil` when the peer closed the socket.
     /// - Throws: on a transport failure.
-    func receive() async throws -> String?
+    func receive() async throws -> WebSocketFrame?
 
     /// Close the socket.
     func close() async
@@ -129,15 +141,15 @@ public actor URLSessionWebSocketTransport: WebSocketTransport {
         }
     }
 
-    public func receive() async throws -> String? {
+    public func receive() async throws -> WebSocketFrame? {
         guard let task else { return nil }
         do {
             let message = try await task.receive()
             switch message {
             case .string(let text):
-                return text
+                return .text(text)
             case .data(let data):
-                return String(data: data, encoding: .utf8)
+                return .binary(data)
             @unknown default:
                 return nil
             }

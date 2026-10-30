@@ -823,7 +823,9 @@ final class AppFlowNavigationTests: AppFlowTestBase {
         expect(name, "the computer's name is not a button")
         XCTAssertTrue(name.staticTexts["Mock Mac (fixture)"].exists, "the button is not the computer's name")
         name.tap()
-        expect(app.buttons["hosts.add"], "the window offers no way to add a computer")
+        // The window no longer offers a code to scan: the account's computers
+        // are listed directly, and the on-device agent is the first row.
+        expect(app.buttons["host.row.local"], "the window does not offer the on-device agent")
         expect(app.buttons["host.row.mock-host-0000-4000-8000-000000000000"], "the paired computer is not listed")
     }
 

@@ -184,7 +184,13 @@ public actor WebSocketSignalingTransport: MizarNetSignalingTransport {
             while true {
                 let text: String?
                 do {
-                    text = try await socket.receive()
+                    // Signaling is JSON only; a binary frame on this channel is
+                    // not part of the protocol and is skipped rather than
+                    // decoded as text.
+                    guard case .text(let body)? = try await socket.receive() else {
+                        continue
+                    }
+                    text = body
                 } catch {
                     // A transport failure ends the channel: there is no
                     // reconnect here because the *connection* owns retry

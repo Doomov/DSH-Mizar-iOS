@@ -277,6 +277,26 @@ final class LiveActivityController {
         refreshPushToken()
     }
 
+    /// Take the island down because the host it describes cannot keep it true.
+    ///
+    /// A card is a window onto a *computer's* running turn: it is kept current by
+    /// pushes from that computer and by a background refresh that can reach it.
+    /// The on-device agent has neither -- the kernel answers `push.register` with
+    /// `{ registered: false }`, and a suspended app's own agent is stopped, not
+    /// running -- so a card for it would be a clock nobody could stop. Ending any
+    /// card left from the computer before the switch is the honest state.
+    func endForLocalAgent() async {
+        guard ActivityCalls.hasPresentable else { return }
+        log.add(
+            .live,
+            await ActivityCalls.endAll(
+                with: LiveActivityState(),
+                why: "the on-device agent has no off-screen channel",
+            ),
+        )
+        forgetPushToken()
+    }
+
     // MARK: - Making the island match
 
     /// Carry out one decision.

@@ -33,6 +33,14 @@ struct SessionDetailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var stats: SessionStatsFrame?
+    /// The host-reported state for this session, when it reports one.
+    @State private var liveState: SessionState?
+    @State private var liveStateStale = false
+    @State private var liveStateText = ""
+    /// The action in progress, for the present-tense line.
+    @State private var liveRunning: ProcessCategory?
+    /// What this segment has finished, for the frozen heading.
+    @State private var liveDone: Set<ProcessCategory> = []
     /// The session `stats` was read for.
     ///
     /// The shell keys this page per session (`.id(sessionId)`), so the state
@@ -277,6 +285,7 @@ struct SessionDetailView: View {
                 .overlay(alignment: .bottom) {
                     bottomStack(proxy: proxy)
                 }
+                .task(id: sessionId) { await watchLiveState() }
                 // On an iPad with the index column put away, the turns stay at the
                 // edge as a rail to scrub.
                 .overlay(alignment: .trailing) {
@@ -459,6 +468,18 @@ struct SessionDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 conversation
+
+                // The running turn's own line, at the end of the conversation
+                // rather than above the composer: the answer is about to land
+                // here, and the place to watch is the place it will arrive.
+                if !liveDone.isEmpty || liveStateText.isEmpty == false || liveRunning != nil {
+                    LiveTurnBlock(
+                        running: liveRunning,
+                        done: liveDone,
+                        text: liveStateText,
+                    )
+                    .padding(.top, 10)
+                }
 
                 // What was just sent, drawn where it will land before the
                 // host has recorded it. Hidden from the accessibility tree:
@@ -1153,6 +1174,49 @@ struct SessionDetailView: View {
     /// layout must not permanently hide a successfully positioned conversation.
     ///
     /// - Parameter proxy: the conversation's scroll view.
+    /// Follow the host's state channel for this session.
+    ///
+    /// The channel is a push, but the connection is an actor: this view cannot
+    /// subscribe to it without another layer, so it samples once a second. A
+    /// state that changes is redrawn within a heartbeat, which is the pace the
+    /// channel itself uses.
+    private func watchLiveState() async {
+        while !Task.isCancelled {
+            if let snapshot = await model.liveState(for: sessionId) {
+                liveState = snapshot.state
+                liveStateStale = snapshot.stale
+                liveStateText = snapshot.text
+                if let state = snapshot.state {
+                    // A terminal state closes the segment; the next thing the
+                    // host says starts a new one.
+                    if !state.isBusy && !state.carriesText {
+                        if state == .completed || state == .failed || state == .paused {
+                            liveDone = []
+                            liveRunning = nil
+                            liveStateText = ""
+                            liveState = nil
+                        }
+                    } else if let category = ProcessCategory.from(state: state) {
+                        // Present tense while it runs; past tense once a later
+                        // state replaces it. The line is the answer to "what is
+                        // it doing", so it only ever says one thing at a time.
+                        if let previous = liveRunning { liveDone.insert(previous) }
+                        liveRunning = category
+                    }
+                }
+            } else {
+                liveState = nil
+                liveStateStale = false
+                liveStateText = ""
+                liveDone = []
+                liveRunning = nil
+            }
+            // A stream is worth watching closely; a resting state is not.
+            let interval: Duration = liveState?.carriesText == true ? .milliseconds(250) : .seconds(1)
+            try? await Task.sleep(for: interval)
+        }
+    }
+
     private func placeInitially(proxy: ScrollViewProxy) async {
         // Only a committed conversation has a bottom to place against. The
         // empty and failed terminals reveal at commit; there is nothing here

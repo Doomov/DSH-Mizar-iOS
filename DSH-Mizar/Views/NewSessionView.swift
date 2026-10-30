@@ -56,20 +56,26 @@ struct NewSessionView: View {
                     }
                 }
 
-                Section("Anywhere else") {
-                    TextField("/Users/you/projects/thing", text: $path)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                }
-
-                Section {
-                    Button("Start session") {
-                        Task { await create(path.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                // The on-device agent manages its own sandbox: `session.create`
+                // answers REMOTE_ERROR for any `cwd` but its workspace root, so
+                // the free-form field would be a field that cannot be used. The
+                // kernel's own workspace is the row above.
+                if !model.isLocalAgentMode {
+                    Section("Anywhere else") {
+                        TextField("/Users/you/projects/thing", text: $path)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.body.monospaced())
                     }
-                    .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || creating)
-                } footer: {
-                    Text("The host opens this directory and starts a session in it.")
+
+                    Section {
+                        Button("Start session") {
+                            Task { await create(path.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                        }
+                        .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || creating)
+                    } footer: {
+                        Text("The host opens this directory and starts a session in it.")
+                    }
                 }
             }
             .navigationTitle("New session")

@@ -86,6 +86,12 @@ enum FrozenWorkspaceCatalog {
                 path: workspace.path,
                 title: workspace.title.isEmpty ? workspace.path : workspace.title,
                 sessions: newestFirst(held),
+                // The row's label, not a membership decision: which agent owns
+                // the folder is a field the host sent, and copying it is what
+                // keeps these two comparable with production now that the
+                // heading draws it. The lookup being measured is untouched.
+                engine: workspace.engine
+                    ?? workspace.workspaceId.split(separator: ":", maxSplits: 1).first.map(String.init),
             )
         }
 
@@ -193,6 +199,12 @@ enum CandidateWorkspaceCatalog {
                 path: workspace.path,
                 title: workspace.title.isEmpty ? workspace.path : workspace.title,
                 sessions: newestFirst(held),
+                // The row's label, not a membership decision: which agent owns
+                // the folder is a field the host sent, and copying it is what
+                // keeps these two comparable with production now that the
+                // heading draws it. The lookup being measured is untouched.
+                engine: workspace.engine
+                    ?? workspace.workspaceId.split(separator: ":", maxSplits: 1).first.map(String.init),
             )
         }
 

@@ -94,7 +94,7 @@ struct MizarShell: View {
         .onChange(of: scenePhase, initial: true) { _, phase in layers.scenePhase = phase }
         .onAppear { if roots == nil { roots = makeRoots() } }
         // Whether the drawers are moving, published to the motion that
-        // yields to it: the shimmer, the twin star, the typewriter --
+        // yields to it: the shimmer, the turning mark, the typewriter --
         // anything that redraws every frame it runs -- holds for the
         // duration of a drag and its settle, so the frames that move the
         // card are not spent redrawing the card's content.

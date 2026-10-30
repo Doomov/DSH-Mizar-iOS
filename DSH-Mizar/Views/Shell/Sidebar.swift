@@ -43,6 +43,10 @@ struct SidebarView: View {
     @State private var showingSync = false
     @State private var showingNewSession = false
     @State private var showingNewWorkspace = false
+    /// The name-a-folder sheet the on-device agent uses instead.
+    @State private var showingLocalWorkspace = false
+    /// Which agent this computer's list is showing, when it serves more than one.
+    @State private var showingAgentPicker = false
     @State private var showingConnection = false
     @State private var showingSettings = false
 
@@ -98,6 +102,7 @@ struct SidebarView: View {
             header
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
+            agentLine
             problemLine
             search
                 .padding(.top, 12)
@@ -144,6 +149,47 @@ struct SidebarView: View {
         }
     }
 
+    /// Which agent this list belongs to, when the computer serves more than one.
+    ///
+    /// The reported confusion, in one control: a desktop runs DSH, Claude Code
+    /// and Codex at once, they share no sessions and no folders, and a phone that
+    /// draws one merged list under the computer's name is a phone nobody can
+    /// plan in. The capsule says whose list is on screen and opens the choice;
+    /// a computer with one agent draws nothing at all, because there is nothing
+    /// to tell apart.
+    @ViewBuilder
+    private var agentLine: some View {
+        if !model.isLocalAgentMode, model.engineChoices.count > 1 {
+            let current = model.engineScope
+            Button {
+                showingAgentPicker = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(current?.shortTitle ?? String(localized: "All agents"))
+                        .font(.caption2.weight(.semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .opacity(0.7)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(.fill.tertiary, in: Capsule())
+                .contentShape(.rect)
+            }
+            .buttonStyle(.pressable(scale: 0.96))
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .accessibilityIdentifier("sessions.agent")
+            .accessibilityValue(Text(current?.title ?? String(localized: "All agents")))
+            .mizarPopover(isPresented: $showingAgentPicker) {
+                AgentSwitcher()
+            }
+        }
+    }
+
     /// Whether the refresh button should draw itself as working.
     private var refreshing: Bool { model.isSyncing || model.autoRefreshing }
 
@@ -153,6 +199,14 @@ struct SidebarView: View {
     /// one string on this screen that is theirs rather than the app's -- so it
     /// is the control that chooses the machine, and the chevron beside it turns
     /// to say the window is out.
+    /// The name over the session list: the computer it is talking to, or the
+    /// agent that lives here. An on-device agent has no machine name to borrow,
+    /// and showing the phone's own name would read as a second computer.
+    private var headerTitle: String {
+        if model.isLocalAgentMode { return String(localized: "On-Device Agent") }
+        return model.host?.displayName ?? model.welcome?.hostName ?? String(localized: "Sessions")
+    }
+
     private var computerButton: some View {
         // Read in the body rather than inside the presentation binding, so the
         // prompt is asked about again the moment the drawers stop moving.
@@ -161,7 +215,7 @@ struct SidebarView: View {
             showingComputers = true
         } label: {
             HStack(spacing: 8) {
-                Text(model.host?.displayName ?? model.welcome?.hostName ?? String(localized: "Sessions"))
+                Text(headerTitle)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -187,6 +241,15 @@ struct SidebarView: View {
         // to look at its sessions, not to keep looking at the list.
         .onChange(of: model.host?.hostId) { old, new in
             guard old != nil, new != nil, old != new, showingComputers else { return }
+            Task {
+                try? await Task.sleep(for: .milliseconds(450))
+                showingComputers = false
+            }
+        }
+        // The on-device agent has no host id to change, so it needs the same
+        // dismissal of its own.
+        .onChange(of: model.mode) { _, new in
+            guard new == .local, showingComputers else { return }
             Task {
                 try? await Task.sleep(for: .milliseconds(450))
                 showingComputers = false
@@ -292,7 +355,15 @@ struct SidebarView: View {
     /// Start a workspace: a directory on the computer, which DSH then lists.
     private var newWorkButton: some View {
         Button {
-            showingNewWorkspace = true
+            // Two different questions behind one button. A computer already has
+            // the directory and a session there is what makes it a workspace; the
+            // on-device agent owns its root, so here the workspace *is* the
+            // folder, and the sheet asks for a name rather than a path.
+            if model.isLocalAgentMode {
+                showingLocalWorkspace = true
+            } else {
+                showingNewWorkspace = true
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "folder.badge.plus")
@@ -314,6 +385,11 @@ struct SidebarView: View {
         .accessibilityIdentifier("sessions.newWorkspace")
         .mizarPopover(isPresented: $showingNewWorkspace) {
             NewWorkspaceView()
+        }
+        .sheet(isPresented: $showingLocalWorkspace) {
+            LocalWorkspaceView()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -367,10 +443,6 @@ struct SidebarView: View {
                 .padding(.bottom, 6)
                 .contentTransition(.opacity)
 
-            if model.sessions.isEmpty && model.workspaceGroups.allSatisfy(\.sessions.isEmpty) && query.isEmpty {
-                emptyState
-            }
-
             let groups = visibleGroups
             if groups.isEmpty, !query.isEmpty {
                 Text("Nothing matches “\(query)”")
@@ -396,21 +468,6 @@ struct SidebarView: View {
             }
         }
         .animation(.mizarSmooth, value: query)
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: "tray")
-                .font(.title2)
-                .foregroundStyle(.tertiary)
-            Text("No sessions yet")
-                .font(.headline)
-            Text("Start one on your computer, then refresh.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
     }
 
     /// The groups to draw, with the sessions each shows.
@@ -547,7 +604,7 @@ private struct SidebarFooter: View {
                     if model.runningPollIsActive {
                         // The poll is up: something is running and the phone is
                         // following it.
-                        TwinStar(size: 10)
+                        MizarStar(ink: 14, motion: .running)
                             .transition(.pop)
                     }
                     Image(systemName: "chevron.up")
@@ -644,6 +701,10 @@ private struct SidebarFooter: View {
         // name of its own: it costs no relay bandwidth, and it is the reason the
         // paid features are open. The model owns that classification so this
         // line and everything gated on the same fact cannot drift apart.
+        // The on-device agent is neither a relay nor the local network: it is
+        // this process, and saying "LAN communication" would send somebody
+        // looking for a cable.
+        if model.isLocalAgentMode { return String(localized: "On this device") }
         if model.isLocalCommunication { return String(localized: "LAN communication") }
         switch model.activeEndpoint {
         case .relay: return String(localized: "Through the relay")

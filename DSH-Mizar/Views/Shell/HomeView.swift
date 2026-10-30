@@ -54,8 +54,9 @@ struct HomeView: View {
 
     private var greeting: some View {
         VStack(spacing: 18) {
-            MizarMarkConnecting(accent: .accentColor, ink: .primary)
-                .frame(width: 64)
+            // The greeting is the screen arriving, so the mark throws once
+            // rather than turning for as long as it is on screen.
+            MizarStar(motion: .flick, size: 64)
             VStack(spacing: 6) {
                 Text(model.host?.displayName ?? model.welcome?.hostName ?? "DSH-Mizar")
                     .font(.largeTitle.weight(.bold))

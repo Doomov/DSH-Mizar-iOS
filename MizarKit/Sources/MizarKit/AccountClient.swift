@@ -26,7 +26,7 @@ public struct AccountClient: Sendable {
     /// One host on purpose: the account backend runs on 主力1 only, and the
     /// other relay forwards account traffic nowhere. A build that pointed at a
     /// random relay would have a settings screen that never loads.
-    public static let productionBaseURL = URL(string: "https://dshmizar-1.shirazu-nagisa.com/account/v1")!
+    public static let productionBaseURL = URL(string: "https://dshmizar-1.shirazu-nagisa.com:8443/account/v1")!
 
     /// Whether a relay is the host that owns the account store.
     ///
@@ -214,12 +214,19 @@ public struct AccountClient: Sendable {
     ///   - token: the bearer token.
     ///   - deviceId: the computer's device id, from ``desktops(token:)``.
     /// - Returns: the room and the token.
-    public func connect(token: String, deviceId: String) async throws -> DesktopConnection {
-        struct Body: Encodable, Sendable { let deviceId: String }
+    public func connect(
+        token: String,
+        deviceId: String,
+        engine: String? = nil,
+    ) async throws -> DesktopConnection {
+        struct Body: Encodable, Sendable {
+            let deviceId: String
+            let engine: String?
+        }
         return try await post(
             "connect",
             token: token,
-            body: Body(deviceId: deviceId),
+            body: Body(deviceId: deviceId, engine: engine),
             as: DesktopConnection.self,
         )
     }

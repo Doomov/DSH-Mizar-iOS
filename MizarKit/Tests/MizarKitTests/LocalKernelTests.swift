@@ -246,8 +246,10 @@ struct LocalKernelTests {
         }
         #expect(sawEnd)
 
+        // A workspace is one folder under the root, shared by the sessions in
+        // it -- not a folder per session. The default one is created at boot.
         let fileURL = root
-            .appendingPathComponent("workspace/\(created.sessionId)/notes.md")
+            .appendingPathComponent("Default workspace/notes.md")
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "written by the kernel")
     }
@@ -309,6 +311,39 @@ struct LocalKernelTests {
         )
         #expect(pending["approvals"]?.arrayValue?.isEmpty == true)
         #expect(pending["questions"]?.arrayValue?.isEmpty == true)
+    }
+
+    /// What a tap on the local agent costs, in wall time.
+    ///
+    /// The app boots the kernel the moment the operator picks the local agent
+    /// (`docs/ios-local-agent-plan-2026-10-29.md` §5.3), so this number is what
+    /// sits between the tap and the first session list. Host numbers are a
+    /// lower bound -- the phone's JavaScriptCore is the same engine, but its
+    /// CPU and its file system are not -- so the assertion is a ceiling that
+    /// catches a regression, not a promise about the device.
+    @Test("booting the kernel stays inside the tap-to-screen budget")
+    func bootCost() async throws {
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mizar-kernel-boot-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let clock = ContinuousClock()
+        var samples: [Duration] = []
+        for index in 0..<5 {
+            let runtime = KernelRuntime(
+                rootURL: parent.appendingPathComponent("\(index)", isDirectory: true),
+                hostName: "boot-cost",
+                kv: MemoryKernelKV(),
+                httpHandler: ScriptedKernelHTTP(),
+            )
+            let start = clock.now
+            try await runtime.boot()
+            samples.append(start.duration(to: clock.now))
+        }
+        let fastest = samples.min() ?? .zero
+        let milliseconds = Double(fastest.components.attoseconds) / 1e15
+        print("kernel boot: fastest of 5 = \(String(format: "%.1f", milliseconds)) ms (host)")
+        // Generous on purpose: this runs on CI laptops and under a debug build.
+        #expect(fastest < .seconds(2))
     }
 }
 

@@ -165,11 +165,19 @@ public actor P2PWebSocketTransport: WebSocketTransport {
         }
     }
 
-    public func receive() async throws -> String? {
+    public func receive() async throws -> WebSocketFrame? {
         guard !closed, let stream else { return nil }
         do {
             guard let data = try await stream.receive() else { return nil }
-            return String(data: data, encoding: .utf8)
+            // The session carries both kinds. A UTF-8 body that starts with `{`
+            // is a JSON API frame; anything else is a binary channel frame. The
+            // first byte is the discriminator the state channel itself uses.
+            if let text = String(data: data, encoding: .utf8),
+               text.first(where: { !$0.isWhitespace }) == "{"
+            {
+                return .text(text)
+            }
+            return .binary(data)
         } catch let error as MizarNetError {
             throw error.mizarError
         }

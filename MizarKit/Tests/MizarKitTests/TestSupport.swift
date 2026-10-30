@@ -19,8 +19,8 @@ actor StubTransport: WebSocketTransport {
     typealias Responder = @Sendable (String) -> [String]
 
     private let responder: Responder
-    private var queued: [String?] = []
-    private var waiting: [CheckedContinuation<String?, any Error>] = []
+    private var queued: [WebSocketFrame?] = []
+    private var waiting: [CheckedContinuation<WebSocketFrame?, any Error>] = []
     private var closed = false
     private var connectFailure: (any Error)?
     private var receiveFailure: (any Error)?
@@ -54,11 +54,16 @@ actor StubTransport: WebSocketTransport {
 
     /// Push a frame as if the host sent it.
     func push(_ text: String?) {
+        push(frame: text.map { WebSocketFrame.text($0) })
+    }
+
+    /// Push one frame, text or binary.
+    func push(frame: WebSocketFrame?) {
         if let waiter = waiting.first {
             waiting.removeFirst()
-            waiter.resume(returning: text)
+            waiter.resume(returning: frame)
         } else {
-            queued.append(text)
+            queued.append(frame)
         }
     }
 
@@ -80,7 +85,7 @@ actor StubTransport: WebSocketTransport {
         }
     }
 
-    func receive() async throws -> String? {
+    func receive() async throws -> WebSocketFrame? {
         if let receiveFailure {
             self.receiveFailure = nil
             throw receiveFailure

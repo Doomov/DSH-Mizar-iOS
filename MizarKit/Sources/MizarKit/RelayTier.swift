@@ -25,7 +25,11 @@ public enum RelayTier {
     /// The free relay's origin.
     public static let freeBaseURL = "https://dshmizar.shirazu-nagisa.com"
     /// The account (paid) relay's origin.
-    public static let paidBaseURL = "https://dshmizar-1.shirazu-nagisa.com"
+    ///
+    /// The account-gated instance: same host and certificate as the paid relay,
+    /// but a separate process that refuses anonymous traffic. A build that does
+    /// not know this address simply never dials it.
+    public static let paidBaseURL = "https://dshmizar-1.shirazu-nagisa.com:8443"
 
     /// The origin the tunnel should use for an account.
     /// - Parameter paid: whether the signed-in account is paid.

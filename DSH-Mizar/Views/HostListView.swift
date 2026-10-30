@@ -533,11 +533,11 @@ extension PairedHost: @retroactive Identifiable {
 /// mark sending its signal up and out -- looking for a computer to answer it.
 ///
 /// The mark is injectable so the snapshot suite can pin its resting state
-/// (`MizarMark(lit: 3)`, the state reduce motion rests on): the searching
-/// arcs animate on a repeating keyframe animator, which no render transaction
+/// (`MizarStar(motion: .still)`, which is what Reduce Motion rests on): the
+/// loop runs on a repeating keyframe animator, which no render transaction
 /// stops, and `accessibilityReduceMotion` is a get-only environment key the
-/// harness cannot set. On screen it is always the searching mark; see the
-/// convenience initialiser.
+/// harness cannot set. On screen it is always turning; see the convenience
+/// initialiser.
 struct UnpairedView<Mark: View>: View {
     /// Optional: the snapshot harness renders this screen without a model, and
     /// an injected-environment read that traps would take the golden with it.
@@ -718,11 +718,11 @@ struct UnpairedView<Mark: View>: View {
     }
 }
 
-extension UnpairedView where Mark == MizarMarkSearching {
-    /// The screen as it ships: the searching mark, sending its pulse up and
-    /// out for as long as it is on screen.
+extension UnpairedView where Mark == MizarStar {
+    /// The screen as it ships: the mark turning for as long as nothing has
+    /// answered, which is exactly what is happening.
     init() {
-        self.init(mark: MizarMarkSearching(accent: Color(red: 0.235, green: 0.796, blue: 0.957), ink: .white))
+        self.init(mark: MizarStar(motion: .running, size: 112, palette: .ink(.white)))
     }
 }
 

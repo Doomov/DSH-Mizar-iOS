@@ -509,14 +509,21 @@ final class AccountController {
     ///
     /// - Parameter desktop: the computer, from ``desktops``.
     /// - Returns: the room and the freshly minted token.
-    func connect(to desktop: AccountDesktop) async throws -> DesktopConnection {
+    func connect(
+        to desktop: AccountDesktop,
+        engine: AgentEngine? = nil,
+    ) async throws -> DesktopConnection {
         guard let session, session.isUsable, session.token.isEmpty == false else {
             throw AccountError(
                 code: AccountErrorCode.unauthenticated,
                 message: "Sign in before connecting to a computer.",
             )
         }
-        return try await client.connect(token: session.token, deviceId: desktop.deviceId)
+        return try await client.connect(
+            token: session.token,
+            deviceId: desktop.deviceId,
+            engine: engine?.wireName,
+        )
     }
 
     func signOut() async {

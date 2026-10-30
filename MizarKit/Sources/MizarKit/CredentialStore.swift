@@ -62,6 +62,28 @@ public struct PairedHost: Codable, Sendable, Equatable {
     /// session the way it always did.
     public let netEndpointId: String?
 
+    /// Which agent on this computer the operator opened, when they chose one.
+    ///
+    /// A computer runs three agents and they share nothing: their sessions,
+    /// their working directories and their tool surfaces are separate. The
+    /// choice belongs to the pairing rather than to the connection because it
+    /// has to survive a relaunch -- a phone that forgets it draws DSH's five
+    /// workspaces under Codex's two, which is exactly the report this answers.
+    ///
+    /// Optional: a host from before the desktop learned to serve three agents
+    /// has nothing to choose, and a token the relay minted already carries the
+    /// choice on the computer's side (`host.info.engine` says which).
+    public let engine: String?
+
+    /// Every agent this computer said it serves, as wire names.
+    ///
+    /// Learned from `host.info` and stored so the picker can be drawn while the
+    /// computer is offline, and so a tap on a three-agent computer can ask which
+    /// one *before* opening a socket. `nil` is "the host has not said", which is
+    /// also what an older host says -- the two read the same and neither is a
+    /// reason to show a picker for a machine that has one agent.
+    public let knownEngines: [String]?
+
     public init(
         hostId: String,
         hostName: String,
@@ -73,6 +95,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
         label: String? = nil,
         netEndpointId: String? = nil,
         desktop: HostDesktop? = nil,
+        engine: String? = nil,
+        knownEngines: [String]? = nil,
     ) {
         self.hostId = hostId
         self.hostName = hostName
@@ -84,6 +108,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
         self.label = label
         self.netEndpointId = netEndpointId
         self.desktop = desktop
+        self.engine = engine
+        self.knownEngines = knownEngines
     }
 
     /// What to show for this machine: the operator's name for it, else the
@@ -109,6 +135,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
             label: label,
             netEndpointId: netEndpointId,
             desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
         )
     }
 
@@ -216,6 +244,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
             label: label,
             netEndpointId: netEndpointId,
             desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
         )
     }
 
@@ -240,6 +270,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
             label: label,
             netEndpointId: endpointId,
             desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
         )
     }
 
@@ -263,7 +295,64 @@ public struct PairedHost: Codable, Sendable, Equatable {
             label: label,
             netEndpointId: netEndpointId,
             desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
         )
+    }
+
+    /// A copy opened for one agent, keeping everything else.
+    ///
+    /// `nil` is a real choice -- "all agents", which is what a phone that has
+    /// not chosen gets and what an older host can only answer -- rather than an
+    /// omission, so the parameter takes the optional and the caller says which.
+    ///
+    /// - Parameter engine: the wire name of the agent, or `nil` for all of them.
+    /// - Returns: the updated record.
+    public func opened(on engine: String?) -> PairedHost {
+        PairedHost(
+            hostId: hostId,
+            hostName: hostName,
+            authority: authority,
+            deviceId: deviceId,
+            deviceToken: deviceToken,
+            pairedAt: pairedAt,
+            baseURL: baseURL,
+            label: label,
+            netEndpointId: netEndpointId,
+            desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
+        )
+    }
+
+    /// A copy remembering which agents this computer serves.
+    ///
+    /// - Parameter engines: the wire names, in the host's order.
+    /// - Returns: the updated record.
+    public func remembering(engines: [String]?) -> PairedHost {
+        PairedHost(
+            hostId: hostId,
+            hostName: hostName,
+            authority: authority,
+            deviceId: deviceId,
+            deviceToken: deviceToken,
+            pairedAt: pairedAt,
+            baseURL: baseURL,
+            label: label,
+            netEndpointId: netEndpointId,
+            desktop: desktop,
+            engine: engine,
+            knownEngines: engines,
+        )
+    }
+
+    /// The agents this pairing offers a choice of, in the host's order.
+    ///
+    /// Empty when there is nothing to choose -- an older host, or a computer
+    /// with one agent running -- and the callers all read it as "do not ask".
+    public var engineChoices: [String] {
+        guard let knownEngines, knownEngines.count > 1 else { return [] }
+        return knownEngines
     }
 
     /// A copy pointing at a different relay, keeping the credential.
@@ -282,6 +371,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
             label: label,
             netEndpointId: netEndpointId,
             desktop: desktop,
+            engine: engine,
+            knownEngines: knownEngines,
         )
     }
 }

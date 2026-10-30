@@ -451,6 +451,12 @@ struct ComposerView: View {
         // as well, so this guard is only reachable off the operator's own
         // network; the sentence still names the plan, because the screen it
         // opens is where a plan is bought.
+        if !drafts.isEmpty, model.isLocalAgentMode {
+            // Said here as well as hidden in the menu: a draft can outlive a
+            // mode switch, and "nothing happened" is the worst answer.
+            attachmentError = String(localized: "The on-device agent cannot take attachments yet.")
+            return
+        }
         if !drafts.isEmpty, !model.advancedFeaturesUnlocked {
             attachmentError = String(localized: "Attachments need a paid account.")
             showingPaywall = true

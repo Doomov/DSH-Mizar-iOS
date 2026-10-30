@@ -82,7 +82,7 @@ struct WorkspaceSection: View {
 
     /// The heading: a button whose first text is the workspace's name.
     ///
-    /// Everything else in it is drawn -- the chevron, the folder, the twin star,
+    /// Everything else in it is drawn -- the chevron, the folder, the turning mark,
     /// the count -- so the title stays the first thing a test or VoiceOver finds
     /// inside it, and the only text before the count.
     private var heading: some View {
@@ -105,10 +105,24 @@ struct WorkspaceSection: View {
                     .font(.body.weight(.medium))
                     .lineLimit(1)
                     .foregroundStyle(group.isUnclaimed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                // Whose folder this is, when the list holds more than one
+                // agent's. A scoped connection draws nothing: every row under a
+                // DSH capsule saying "DSH" is noise, and the capsule over the
+                // list already says it once.
+                if model.engineScope == nil,
+                   let agent = group.engine.flatMap(AgentEngine.init(rawValue:)) {
+                    Text(agent.shortTitle)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .frame(height: 16)
+                        .background(.fill.quaternary, in: Capsule())
+                        .accessibilityIdentifier("workspace.engine.\(group.path)")
+                }
                 Spacer(minLength: 8)
                 if !isOpen, group.sessions.contains(where: \.running) {
                     // Work is going on in here, said without opening it.
-                    TwinStar(size: 11)
+                    MizarStar(ink: 15, motion: .running)
                         .transition(.pop)
                 }
                 if waiting > 0 {
@@ -258,7 +272,7 @@ struct SessionRowButton: View {
 
     @ViewBuilder private var indicator: some View {
         if session.running {
-            TwinStar(size: 11)
+            MizarStar(ink: 15, motion: .running)
                 .transition(.pop)
         } else {
             Circle()

@@ -56,6 +56,14 @@ public actor MizarConnection {
         public var appVersion: String?
         /// Reported to the host at `hello`.
         public var deviceModel: String?
+        /// Which agent this connection is for, when the operator chose one.
+        ///
+        /// Sent at `hello` because a token from a scanned pairing carries no
+        /// scope: a computer runs three agents and a phone that names none sees
+        /// all three lists merged. A token the relay minted for an account is
+        /// scoped on the computer's side and wins over this -- asking for
+        /// another agent must never widen what a scoped token can see.
+        public var engine: String?
         /// How long a unary call may take before it is failed.
         public var requestTimeout: Duration
         /// How long the handshake may take before it is failed.
@@ -85,6 +93,7 @@ public actor MizarConnection {
             secure: Bool = false,
             appVersion: String? = nil,
             deviceModel: String? = nil,
+            engine: String? = nil,
             requestTimeout: Duration = .seconds(60),
             baseURL: String? = nil,
             handshakeTimeout: Duration = .seconds(20),
@@ -96,6 +105,7 @@ public actor MizarConnection {
             self.secure = secure
             self.appVersion = appVersion
             self.deviceModel = deviceModel
+            self.engine = engine
             self.requestTimeout = requestTimeout
             self.baseURL = baseURL
             self.handshakeTimeout = handshakeTimeout
@@ -142,6 +152,9 @@ public actor MizarConnection {
     private var transport: WebSocketTransport?
     private var receiveTask: Task<Void, Never>?
     private var state: State = .idle
+
+    /// The host's state channels, one per session it talks about.
+    private var stateChannels: [String: StateChannel] = [:]
     /// The sentence the peer closed with, when it sent one.
     ///
     /// The relay uses it for one thing the app must act on: `traffic allowance
@@ -303,9 +316,14 @@ public actor MizarConnection {
             token: configuration.token,
             appVersion: configuration.appVersion,
             deviceModel: configuration.deviceModel,
+            engine: configuration.engine,
         )
         do {
             try await socket.send(text: try Self.encode(hello))
+            // Ask for the state channel. A host without it -- an older build, or
+            // one whose `MIZAR_STATE_CHANNEL` is off -- ignores the unknown
+            // method, so this costs one frame and changes nothing there.
+            try? await socket.send(text: #"{"method":"state.subscribe"}"#)
         } catch {
             // Closing first, then recording: the close would otherwise write its
             // own reason over the one that actually ended this attempt.
@@ -544,8 +562,13 @@ public actor MizarConnection {
         var failure: (any Error)?
         while !Task.isCancelled {
             do {
-                guard let text = try await socket.receive() else { break }
-                guard await route(text) else { return }
+                guard let frame = try await socket.receive() else { break }
+                switch frame {
+                case .text(let text):
+                    guard await route(text) else { return }
+                case .binary(let data):
+                    await receivedStateFrame(data)
+                }
             } catch {
                 if !Task.isCancelled { failure = error }
                 break
@@ -553,6 +576,49 @@ public actor MizarConnection {
         }
         guard !Task.isCancelled else { return }
         await handleClosed(error: failure)
+    }
+
+    /// Apply one binary state-channel frame.
+    ///
+    /// A binary frame that is not a state frame is ignored, not fatal: the
+    /// channel is additive, and a newer host may grow a second binary dialect.
+    private func receivedStateFrame(_ data: Data) async {
+        // Envelope: u8 session-id length, the id, then the state frame. The
+        // socket carries every session's states; the frame itself does not say
+        // which one it belongs to, so the transport does.
+        guard let length = data.first else { return }
+        let start = 1 + Int(length)
+        guard data.count >= start + StateFrame.headerLength else { return }
+        guard let sessionId = String(data: data[1..<start], encoding: .utf8) else { return }
+        let body = Data(data[start...])
+        guard let frame = try? StateFrame(decoding: body) else { return }
+
+        var channel = stateChannels[sessionId] ?? StateChannel()
+        channel.apply(frame)
+        stateChannels[sessionId] = channel
+    }
+
+    /// What the host says one session is doing, when it says anything.
+    ///
+    /// `nil` until the host opens the channel: an older host never does, and the
+    /// UI must fall back to what it can infer from the conversation.
+    public func sessionState(_ sessionId: String) -> SessionState? {
+        stateChannels[sessionId]?.state
+    }
+
+    /// The body text streamed for a session in its current state interval.
+    public func streamedText(_ sessionId: String) -> String {
+        stateChannels[sessionId]?.text ?? ""
+    }
+
+    /// Whether the host has gone quiet while promising heartbeats.
+    public func isStateStale(_ sessionId: String) -> Bool {
+        stateChannels[sessionId]?.isStale() ?? false
+    }
+
+    /// The most recently updated session's state, for diagnostics.
+    public var latestSessionState: SessionState? {
+        stateChannels.values.compactMap(\.state).last
     }
 
     /// Dispatch one decoded frame.

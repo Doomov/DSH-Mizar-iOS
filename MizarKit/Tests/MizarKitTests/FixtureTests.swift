@@ -67,7 +67,11 @@ struct FixtureTests {
 
     @Test("every fixture decodes as a server frame this build understands")
     func allFixturesDecode() throws {
-        for fixture in try loadFixtures() {
+        // These two are protocol tables, not API frames: one is the state
+        // table, the other the state channel's byte vectors. Both are read by
+        // their own suites.
+        let tables: Set<String> = ["session-state", "state-frames"]
+        for fixture in try loadFixtures() where !tables.contains(fixture.name) {
             let frame = try JSONDecoder().decode(ServerFrame.self, from: fixture.raw)
             if case .unknown(let type, _) = frame {
                 Issue.record("fixture \(fixture.name) decoded as an unknown frame type \(type)")

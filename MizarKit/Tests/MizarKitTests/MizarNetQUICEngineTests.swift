@@ -229,7 +229,7 @@ struct MizarNetQUICEngineTests {
         #expect(try await accepted.receive() == Data("{\"v\":1,\"type\":\"ping\"}".utf8))
 
         try await accepted.send(Data("{\"v\":1,\"type\":\"pong\"}".utf8))
-        #expect(try await transport.receive() == "{\"v\":1,\"type\":\"pong\"}")
+        #expect(try await transport.receive() == .text("{\"v\":1,\"type\":\"pong\"}"))
 
         await transport.close()
         #expect(try await accepted.receive() == nil)

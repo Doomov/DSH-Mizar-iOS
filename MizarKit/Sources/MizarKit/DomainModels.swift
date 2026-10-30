@@ -65,6 +65,24 @@ public struct HostInfo: Decodable, Sendable, Equatable {
     /// same reason: an app must read "cannot say" rather than "no direct path".
     public let netEndpointId: String?
 
+    /// Every agent this computer serves, when it hosts more than one.
+    ///
+    /// A desktop can front DSH, Claude Code and Codex at the same time, and the
+    /// three share nothing. This is how the phone knows to ask which one, rather
+    /// than drawing one merged list and calling it "this computer". Absent when
+    /// the host is older than the field, which reads exactly like a computer
+    /// with one agent, and neither is a reason to show a picker.
+    public let engines: [HostEngine]?
+
+    /// Which agent *this connection* is bound to, when it is bound to one.
+    ///
+    /// The computer's own answer, not the phone's choice repeated back: a token
+    /// the relay minted is scoped on the computer's side, so this is the only
+    /// authority on what the list that arrives can contain. `nil` means no scope
+    /// at all -- all three agents, which is what every connection did before the
+    /// choice existed.
+    public let engine: String?
+
     public init(
         hostId: String,
         hostName: String,
@@ -75,6 +93,8 @@ public struct HostInfo: Decodable, Sendable, Equatable {
         plugin: HostPlugin? = nil,
         desktop: HostDesktop? = nil,
         netEndpointId: String? = nil,
+        engines: [HostEngine]? = nil,
+        engine: String? = nil,
     ) {
         self.hostId = hostId
         self.hostName = hostName
@@ -85,6 +105,28 @@ public struct HostInfo: Decodable, Sendable, Equatable {
         self.plugin = plugin
         self.desktop = desktop
         self.netEndpointId = netEndpointId
+        self.engines = engines
+        self.engine = engine
+    }
+}
+
+/// One agent a computer serves, as `host.info` lists it.
+public struct HostEngine: Codable, Sendable, Equatable, Identifiable {
+    /// The wire name, which is also the prefix of every session id it owns:
+    /// `dsh`, `claude`, `codex`.
+    public let id: String
+    /// The product's display name, for a picker row.
+    public let label: String?
+    /// Whether the agent is reachable right now.
+    public let connected: Bool?
+    /// Why it is not, when the host says.
+    public let detail: String?
+
+    public init(id: String, label: String? = nil, connected: Bool? = nil, detail: String? = nil) {
+        self.id = id
+        self.label = label
+        self.connected = connected
+        self.detail = detail
     }
 }
 
@@ -210,13 +252,30 @@ public struct WorkspaceRow: Codable, Sendable, Equatable, Identifiable {
     /// to matching a session's directory against the workspace path.
     public let sessionIds: [String]?
 
+    /// Which agent owns this folder, when the host says.
+    ///
+    /// A computer that fronts three agents sends rows for all of them on an
+    /// unscoped connection (`dsh:…`, `claude:…`, `codex:…` ids), and a phone
+    /// that cannot tell them apart draws Codex's folders under DSH's. The id
+    /// carries the same information, so this field is only a second spelling of
+    /// it -- `nil` for a host that fronts one agent, and for the on-device
+    /// kernel, which sends bare ids.
+    public let engine: String?
+
     public var id: String { workspaceId }
 
-    public init(workspaceId: String, path: String, title: String, sessionIds: [String]? = nil) {
+    public init(
+        workspaceId: String,
+        path: String,
+        title: String,
+        sessionIds: [String]? = nil,
+        engine: String? = nil,
+    ) {
         self.workspaceId = workspaceId
         self.path = path
         self.title = title
         self.sessionIds = sessionIds
+        self.engine = engine
     }
 
     /// Decoded leniently, because this is also what a stored index is read with.
@@ -236,6 +295,7 @@ public struct WorkspaceRow: Codable, Sendable, Equatable, Identifiable {
         // an index that will not load, and "the host did not say" is the answer
         // that hides nothing -- the phone still matches sessions on the path.
         sessionIds = (try? container.decodeIfPresent([String].self, forKey: .sessionIds)) ?? nil
+        engine = (try? container.decodeIfPresent(String.self, forKey: .engine)) ?? nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -243,7 +303,17 @@ public struct WorkspaceRow: Codable, Sendable, Equatable, Identifiable {
         case path
         case title
         case sessionIds
+        case engine
     }
+}
+
+/// The `{ workspace: … }` envelope `workspace.create` answers with.
+///
+/// A kernel extension: the desktop host makes a workspace by being asked to
+/// start a session in a directory that already exists. A host that owns its
+/// root -- the on-device agent -- can be asked to make the folder.
+public struct WorkspaceCreateResult: Decodable, Sendable, Equatable {
+    public let workspace: WorkspaceRow
 }
 
 /// One row in the session list.

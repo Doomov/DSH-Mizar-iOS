@@ -47,6 +47,29 @@ final class AppModel {
     /// and a desktop should not have to unpair one to reach the other.
     private(set) var hosts: [PairedHost] = []
 
+    /// Which kind of host the one connection is to.
+    ///
+    /// The local agent is not a `PairedHost`: it has no token, no address to
+    /// dial, nothing to forget and nothing to rename. What it does have is a
+    /// `hostId` for the host-scoped caches, a session list and a connection --
+    /// which is why it is a mode rather than a row in ``hosts``.
+    enum HostMode: Equatable {
+        case remote
+        case local
+    }
+
+    private(set) var mode: HostMode = .remote
+
+    /// The on-device agent, and the kernel behind it.
+    ///
+    /// Present from launch so the host list can ask it whether a model is
+    /// configured; the kernel itself is not booted until it is picked (`start`
+    /// is what boots it).
+    let localAgent = LocalAgentController()
+
+    /// Whether this connection is to the on-device agent.
+    var isLocalAgentMode: Bool { mode == .local }
+
     /// The optional account: who is signed in, and what they have paid for.
     ///
     /// Optional in the product sense, not the Swift sense: every free feature
@@ -98,6 +121,10 @@ final class AppModel {
         // reachable from a test, and it exists only in Debug builds.
         if Self.launchForcesLocalNetwork { return true }
         #endif
+        // The on-device agent moves no bytes across the relay at all -- it does
+        // not even open a socket -- so the rule that unlocks the LAN features
+        // unlocks them here by its own reason.
+        if isLocalAgentMode { return true }
         return activeEndpoint?.isLocalNetwork ?? false
     }
 
@@ -124,8 +151,29 @@ final class AppModel {
     /// deliberately not riding it yet. The switch in Settings says experimental;
     /// this is one of the places that means something.
     var previewUnlocked: Bool {
-        advancedFeaturesUnlocked && activeEndpoint?.isDirectPath != true
+        // The on-device agent has no `file.stat`/`file.read` to serve a preview
+        // from -- the kernel's tool surface reads its own workspace and nothing
+        // else -- so the feature is off there whatever the plan says.
+        !isLocalAgentMode
+            && advancedFeaturesUnlocked
+            && activeEndpoint?.isDirectPath != true
     }
+    /// Which agent this phone opened on the computer, when it chose one.
+    ///
+    /// A computer runs three agents and they share nothing, so "the Mac's
+    /// sessions" is not a thing: it is DSH's sessions, or Claude Code's, or
+    /// Codex's. This is the choice, and everything the computer sends back is
+    /// filtered by it -- the session list, the workspace list, and the picker
+    /// that starts work.
+    ///
+    /// Read from two places, in this order of authority: the choice is stored on
+    /// the pairing (so it survives a relaunch, which is the bug that made the
+    /// list look random), and `host.info.engine` overwrites it, because a token
+    /// the relay minted is scoped on the computer's side and that is what the
+    /// arriving rows were actually filtered by. `nil` is "all agents" -- an older
+    /// host, or a pairing nobody has chosen for yet.
+    private(set) var engineScope: AgentEngine?
+
     /// The sessions the host lists, newest activity first.
     private(set) var sessions: [SessionRow] = [] {
         didSet {
@@ -711,7 +759,13 @@ final class AppModel {
 
     /// Official DSH wallets are distinct from the Mizar relay subscription account.
     let deepSeekBalance = DeepSeekBalanceController()
-    var balanceConnectionTag: HostTag? { phase == .ready ? currentTag : nil }
+    var balanceConnectionTag: HostTag? {
+        // A wallet belongs to the computer's DeepSeek account. The on-device
+        // agent has no computer and no DSH install behind it, so there is no
+        // wallet to read rather than a wallet reading zero.
+        guard !isLocalAgentMode else { return nil }
+        return phase == .ready ? currentTag : nil
+    }
 
     func refreshDeepSeekBalance() async {
         guard let connection, let tag = balanceConnectionTag else {
@@ -736,6 +790,20 @@ final class AppModel {
             )
         }
         await deepSeekBalance.refresh()
+    }
+
+    /// What the host says one session is doing, if it says anything.
+    ///
+    /// Reads through to the connection's state channel: `nil` when the host
+    /// predates it or has the channel switched off, which the UI draws as
+    /// nothing at all rather than as an unknown state.
+    func liveState(for sessionId: String) async -> (state: SessionState?, stale: Bool, text: String)? {
+        guard let connection else { return nil }
+        let state = await connection.sessionState(sessionId)
+        guard state != nil else { return nil }
+        let stale = await connection.isStateStale(sessionId)
+        let text = await connection.streamedText(sessionId)
+        return (state, stale, text)
     }
 
     private var connection: MizarConnection? {
@@ -775,9 +843,19 @@ final class AppModel {
     /// be written. Every one of these values is an answer from a host, and a host
     /// that is not connected has not answered.
     private var currentTag: HostTag? {
-        guard connection != nil, let hostId = host?.hostId else { return nil }
+        guard connection != nil else { return nil }
+        // The on-device agent has no pairing to read a host id from. Its id is
+        // the mode itself: one stable name on this phone, for the life of the
+        // install, in the same namespace the paired machines use.
+        if isLocalAgentMode { return HostTag(hostId: Self.localHostId, epoch: connectionEpoch) }
+        guard let hostId = host?.hostId else { return nil }
         return HostTag(hostId: hostId, epoch: connectionEpoch)
     }
+
+    /// The id host-scoped caches are filed under while the on-device agent is
+    /// connected. Never sent anywhere; it only has to be stable and not collide
+    /// with a pairing.
+    static let localHostId = "local-kernel"
 
     init(
         credentials: any CredentialStore = KeychainCredentialStore(),
@@ -852,6 +930,14 @@ final class AppModel {
     /// feature off, which is read at the moment of acting rather than remembered
     /// from when an activity started.
     func refreshLiveActivity() async {
+        // The island belongs to a computer: it is fed by that computer's pushes
+        // and by background refreshes that can reach it. The on-device agent has
+        // neither, so there is nothing to keep true and a card left over is
+        // taken down instead.
+        if isLocalAgentMode {
+            await liveActivity.endForLocalAgent()
+            return
+        }
         await liveActivity.refresh(
             sessions: sessions,
             conversations: conversations,
@@ -1109,14 +1195,23 @@ final class AppModel {
         )
         // Only ever adds. A stored list that is empty must not be able to wipe
         // what a live read has already put on screen.
-        if !stored.sessions.isEmpty { sessions = stored.sessions }
+        //
+        // Filtered on the way out of the cache for the same reason the network
+        // read is: an index written before the phone could choose, or by another
+        // agent on this computer, holds rows this connection cannot open. The
+        // report that started this was a phone showing them -- a list that is
+        // right while connected and wrong on the next launch is not right.
+        let storedSessions = Self.scoped(stored.sessions, to: engineScope)
+        if !storedSessions.isEmpty { sessions = storedSessions }
         if !stored.titles.isEmpty { titles.merge(stored.titles) { _, stored in stored } }
         // Not merged: a workspace is not something to accumulate. This is the
         // host's last answer, whole, and unioning a second answer into it is how
         // a deleted workspace survives a refresh -- which is the bug this exists
         // to fix. `nil` stays `nil`: knowing nothing is not the same as knowing
         // there is nothing.
-        if let storedWorkspaces = stored.workspaces { workspaces = storedWorkspaces }
+        if let storedWorkspaces = stored.workspaces {
+            workspaces = Self.scoped(storedWorkspaces, to: engineScope)
+        }
     }
 
     /// Write down what is on screen, so a later launch starts from it.
@@ -1265,6 +1360,11 @@ final class AppModel {
     /// - Parameter hostId: the machine to open.
     func open(hostId: String) async {
         guard let next = hosts.first(where: { $0.hostId == hostId }) else { return }
+        // Leaving the on-device agent is its own act: a running local turn is
+        // stopped rather than left executing behind a screen that can no longer
+        // show it (the kernel would still call the model, and an approval that
+        // arrived now would fail the turn anyway).
+        if isLocalAgentMode { await leaveLocalAgent() }
         let leaving = host?.hostId != next.hostId
         disconnectCurrent()
         // Session ids are the host's, and two machines are two hosts: a choice
@@ -1281,6 +1381,70 @@ final class AppModel {
             try await connect(using: next)
         } catch {
             failConnection(error, authority: next.authority ?? next.baseURL)
+        }
+    }
+
+    /// Switch the one connection to the on-device agent.
+    ///
+    /// The same connection object and the same protocol as a computer; only the
+    /// transport differs (`LocalKernelTransport` in place of a socket), which is
+    /// what keeps every screen, notification and poll working unmodified.
+    func enterLocalAgent() async {
+        guard !isLocalAgentMode || connection == nil else { return }
+        disconnectCurrent()
+        host = nil
+        activeEndpoint = nil
+        mode = .local
+        modelChoice = [:]
+        phase = .connecting
+        log.add(.connection, "starting the on-device agent")
+        localAgent.refreshKeyPresence()
+        do {
+            let started = try await localAgent.start()
+            await adoptLocal(started)
+        } catch {
+            let message = LocalAgentController.describe(error)
+            log.add(.connection, "the on-device agent did not start: \(message)")
+            // A mode with no connection behind it is not a mode: leaving it set
+            // would draw the computer list with the local host id and no host.
+            localAgent.stop()
+            mode = .remote
+            phase = .failed(message)
+        }
+    }
+
+    /// Stop a running local turn, drop the connection, keep the kernel.
+    func leaveLocalAgent() async {
+        await stopLocalTurns()
+        disconnectCurrent()
+        localAgent.stop()
+        mode = .remote
+        activeEndpoint = nil
+        welcome = nil
+        // "Unpaired" is a fact about what is stored, not about this moment: a
+        // phone with a computer that simply is not connected is connecting, and
+        // every caller here goes on to open one (or to say there is none).
+        phase = hosts.isEmpty ? .unpaired : .connecting
+        localAgent.refreshKeyPresence()
+    }
+
+    /// Ask the kernel to stop every local session the app believes is running.
+    ///
+    /// Best effort, and deliberately before the disconnect: once the socket is
+    /// gone the kernel's approval broker treats the turn as unanswered and fails
+    /// it, which is a worse ending than "stopped" for both the log and the
+    /// operator. A turn this misses is closed the same way it would be after a
+    /// crash -- by the kernel, on the next boot.
+    private func stopLocalTurns() async {
+        guard let connection, isLocalAgentMode else { return }
+        for row in sessions where row.running {
+            let payload = JSONValue.object(["sessionId": .string(row.sessionId)])
+            _ = try? await loggedCall(
+                "session.cancel",
+                payload: payload,
+                on: connection,
+                as: AcceptanceResult.self,
+            )
         }
     }
 
@@ -1325,6 +1489,44 @@ final class AppModel {
         }
     }
 
+    /// Surface a failed account connection on the banner the app already has.
+    func reportAccountFailure(_ error: any Error) {
+        let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        lastError = text.isEmpty ? nil : text
+    }
+
+    /// Keep only the chosen agent's sessions.
+    ///
+    /// The rule itself is in MizarKit (``WorkspaceCatalog/scoped(_:to:)``), next
+    /// to the workspace half and to the tests that hold both, because the two
+    /// halves of one screen must not be able to disagree about whose work is on
+    /// it.
+    ///
+    /// - Parameters:
+    ///   - rows: the host's rows, or the ones stored.
+    ///   - engine: the agent, or `nil` for all of them.
+    /// - Returns: the rows to draw.
+    static func scoped(_ rows: [SessionRow], to engine: AgentEngine?) -> [SessionRow] {
+        WorkspaceCatalog.scoped(rows, to: engine?.wireName)
+    }
+
+    /// Keep only the chosen agent's workspaces.
+    ///
+    /// The second half of the report: a phone scoped to DSH listed DSH's five
+    /// folders and, under them, Codex's two, drawn as empty headings because the
+    /// sessions in them had already been filtered out. The host no longer sends
+    /// them, and this is the phone's own answer to the same question -- for an
+    /// older host, for a list stored before this rule existed, and for the frame
+    /// between a reconnect and the first answer.
+    ///
+    /// - Parameters:
+    ///   - rows: the host's rows, or the ones stored.
+    ///   - engine: the agent, or `nil` for all of them.
+    /// - Returns: the rows to draw.
+    static func scoped(_ rows: [WorkspaceRow], to engine: AgentEngine?) -> [WorkspaceRow] {
+        WorkspaceCatalog.scoped(rows, to: engine?.wireName)
+    }
+
     /// Open a computer the account found, with the token the relay brokered.
     ///
     /// The token is the same kind pairing issues, so the rest of the app only
@@ -1340,7 +1542,11 @@ final class AppModel {
         _ desktop: AccountDesktop,
         using connection: DesktopConnection,
         at origin: URL,
+        engine: AgentEngine? = nil,
     ) async {
+        // Set before the socket opens: the first list read must already be
+        // filtered, or the phone shows every agent's sessions for one frame.
+        engineScope = engine
         let baseURL = origin
             .appendingPathComponent("r")
             .appendingPathComponent(connection.room)
@@ -1355,6 +1561,10 @@ final class AppModel {
             deviceId: desktop.deviceId,
             deviceToken: connection.token,
             baseURL: baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL,
+            // The relay already minted this token for the agent, so the computer
+            // will answer only that agent's rows. Storing the choice is what
+            // makes the phone's own filters agree with it on the next launch.
+            engine: engine?.rawValue,
         )
         try? await credentials.save(paired)
         if let index = hosts.firstIndex(where: { $0.hostId == paired.hostId }) {
@@ -1368,6 +1578,15 @@ final class AppModel {
     /// Tear the live connection down without touching what is stored.
     private func disconnectCurrent() {
         if connection != nil { log.add(.connection, "closing the connection") }
+        // Every path that drops a connection drops the mode with it: a pairing,
+        // a forget and a switch all end whatever this phone was connected to,
+        // and the on-device agent keeps its kernel but not its lambda. Leaving
+        // `mode` behind here is how a computer's session list would be drawn
+        // under the local agent's host id.
+        if isLocalAgentMode {
+            localAgent.stop()
+            mode = .remote
+        }
         interactionPoll?.cancel()
         eventListener?.cancel()
         // Captured, not read inside the task. `Task { await connection?.disconnect() }`
@@ -1377,6 +1596,7 @@ final class AppModel {
         // connect with "Socket is not connected" before it had said hello.
         let closing = connection
         connection = nil
+        engineScope = nil
         if let closing { Task { await closing.disconnect() } }
         welcome = nil
         sessions = []
@@ -1690,7 +1910,7 @@ final class AppModel {
             }
             // The socket answered: whatever failed before is not failing now.
             runningPollRecovery.recordSuccess()
-            sessions = result.items
+            sessions = Self.scoped(result.items, to: engineScope)
             sessionsAreKnown = true
             lastError = nil
             // Read after the list, with the clock at the same instant: which
@@ -1948,6 +2168,18 @@ final class AppModel {
                 permissionCatalogState.publish(read, for: tag)
             }
         }
+    }
+
+    /// Forget the cached catalogues and read them again.
+    ///
+    /// A provider added in Settings is a new model in the picker, and
+    /// ``loadCatalogs`` only asks a machine that has not answered yet. This is
+    /// the one caller that has a reason to ask twice.
+    func reloadCatalogs() async {
+        guard connection != nil else { return }
+        modelCatalogState.clear()
+        permissionCatalogState.clear()
+        await loadCatalogs()
     }
 
     /// Send a prompt to a session.
@@ -2426,6 +2658,10 @@ final class AppModel {
     /// updated from the answer so the next reconnect dials the right relay, and
     /// a relayed socket is redialled once the host has had time to move.
     func syncRelayTier() async {
+        // A relay tier is a fact about a computer's tunnel. The on-device agent
+        // has no tunnel, and asking it would read `host.info` for an answer it
+        // does not have.
+        guard !isLocalAgentMode else { return }
         guard let connection, phase == .ready else { return }
         guard let info = try? await connection.call("host.info", as: HostInfo.self) else { return }
         // Learned on every ready socket rather than at pairing: the host may
@@ -2442,6 +2678,14 @@ final class AppModel {
         // written into the pairing so an offline computer keeps its labels.
         if let desktop = info.desktop, !desktop.isEmpty {
             await rememberDesktopIdentity(desktop)
+        }
+        // Which agents this computer serves, and which one this socket is bound
+        // to. Read on every ready socket, like the identity and the desktop
+        // label above, because a host upgraded mid-pairing can start serving
+        // three agents without the phone being re-paired.
+        if let engines = info.engines {
+            await rememberEngines(engines.map(\.id))
+            await adoptEngineScope(info.engine.flatMap(AgentEngine.init(rawValue:)))
         }
         guard let relay = info.relay else { return }
         let desired = RelayTier.baseURL(paid: account.isPaid)
@@ -2477,6 +2721,91 @@ final class AppModel {
                     + Self.describe(error, authority: desired),
             )
         }
+    }
+
+    /// Remember which agents this computer said it serves.
+    ///
+    /// Stored on the pairing so the choice can be offered while the computer is
+    /// offline -- and so a tap can ask "which agent?" *before* a socket opens,
+    /// which is the only way the merged list never appears at all.
+    ///
+    /// - Parameter engines: the wire names, in the host's order.
+    private func rememberEngines(_ engines: [String]) async {
+        guard var current = host else { return }
+        guard current.knownEngines != engines else { return }
+        current = current.remembering(engines: engines)
+        host = current
+        if let index = hosts.firstIndex(where: { $0.hostId == current.hostId }) {
+            hosts[index] = current
+        }
+        try? await credentials.save(current)
+        log.add(.connection, "agents: this computer serves \(engines.joined(separator: ", "))")
+    }
+
+    /// Take the computer's own word for which agent this connection is bound to.
+    ///
+    /// The phone's stored choice is an intention; this is what the arriving rows
+    /// were actually filtered by, because a token the relay minted is scoped on
+    /// the computer's side. A phone whose stored choice and token disagree would
+    /// otherwise filter by the wrong one and show an empty list that is not
+    /// empty.
+    ///
+    /// - Parameter engine: the agent the host named, or `nil` for "all agents".
+    private func adoptEngineScope(_ engine: AgentEngine?) async {
+        guard engine != engineScope else { return }
+        engineScope = engine
+        // The lists on screen were filtered by the old answer. Re-filter rather
+        // than wait for the next refresh: one of them may be wrong now, and the
+        // other is already in memory.
+        sessions = Self.scoped(sessions, to: engine)
+        if let workspaces { self.workspaces = Self.scoped(workspaces, to: engine) }
+        guard var current = host else { return }
+        let wire = engine?.rawValue
+        guard current.engine != wire else { return }
+        current = current.opened(on: wire)
+        host = current
+        if let index = hosts.firstIndex(where: { $0.hostId == current.hostId }) {
+            hosts[index] = current
+        }
+        try? await credentials.save(current)
+        log.add(.connection, "agent: this connection is \(engine?.title ?? "all agents")")
+    }
+
+    /// The agents this computer offers a choice of.
+    ///
+    /// Empty when there is nothing to choose. The pairing remembers the answer
+    /// from the last connection, so this works while the computer is offline.
+    var engineChoices: [AgentEngine] {
+        guard !isLocalAgentMode, let host else { return [] }
+        return host.engineChoices.compactMap(AgentEngine.init(rawValue:))
+    }
+
+    /// Open this computer as one agent, or as all of them.
+    ///
+    /// A live connection is redialled, because the choice travels at `hello` and
+    /// the host would otherwise keep answering for the agent it was told about
+    /// when the socket opened.
+    ///
+    /// - Parameters:
+    ///   - engine: the agent to show, or `nil` for every agent the computer has.
+    ///   - hostId: the computer. Defaults to the open one.
+    func chooseEngine(_ engine: AgentEngine?, for hostId: String? = nil) async {
+        guard let hostId = hostId ?? host?.hostId else { return }
+        guard let current = hosts.first(where: { $0.hostId == hostId }) else { return }
+        // Tapping the agent that is already on screen is not a reason to drop a
+        // working socket. Compared against the effective scope rather than the
+        // record, because those differ for a connection the relay scoped -- and
+        // only for the computer that is open: choosing for another one is a
+        // stored preference, not a comparison with what is on screen.
+        if host?.hostId == hostId, engine == engineScope { return }
+        let updated = current.opened(on: engine?.rawValue)
+        if let index = hosts.firstIndex(where: { $0.hostId == hostId }) { hosts[index] = updated }
+        if host?.hostId == hostId { host = updated }
+        try? await credentials.save(updated)
+        // Asked for the computer that is not open: storing the choice is the
+        // whole of it, and it is used the next time they open that machine.
+        guard host?.hostId == hostId else { return }
+        await open(hostId: hostId)
     }
 
     /// Persist the identity the host punches under.
@@ -2633,6 +2962,57 @@ final class AppModel {
         pendingFirstPrompt[sessionId] = prompt
         selectedSessionId = sessionId
         return sessionId
+    }
+
+    /// Create a workspace folder under the on-device agent's root.
+    ///
+    /// The remote half of the app can only *use* a directory the computer
+    /// already has. The on-device agent owns its root, so a workspace here is
+    /// something this phone can make: one folder, named by the operator,
+    /// directly in the folder the Files app shows.
+    ///
+    /// - Parameter name: the folder name. No slashes; the kernel refuses what
+    ///   cannot be a folder.
+    /// - Returns: the workspace, as the kernel reports it.
+    @discardableResult
+    func createLocalWorkspace(name: String) async throws -> WorkspaceRow {
+        guard let connection, isLocalAgentMode else { throw LocalWorkspaceFailure.notConnected }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw LocalWorkspaceFailure.emptyName }
+        // Asked before the kernel is: "already exists" is a sentence this app
+        // has words for, and the kernel's own message is a diagnostic
+        // (`workspace.create: "Projects" already exists`) that reads like a bug
+        // report on screen.
+        if workspaceChoices.contains(where: { $0.title == trimmed }) {
+            throw LocalWorkspaceFailure.duplicateName
+        }
+        let payload = JSONValue.object(["name": .string(trimmed)])
+        let result = try await loggedCall(
+            "workspace.create",
+            payload: payload,
+            on: connection,
+            as: WorkspaceCreateResult.self,
+        )
+        // The session list and the workspace registry are one answer on this
+        // host; reading both is what makes the new folder appear with the
+        // others rather than only after a manual refresh.
+        await refreshSessions(reconnectingIfNeeded: false)
+        return result.workspace
+    }
+
+    /// Why a workspace could not be made.
+    enum LocalWorkspaceFailure: LocalizedError {
+        case notConnected
+        case emptyName
+        case duplicateName
+
+        var errorDescription: String? {
+            switch self {
+            case .notConnected: String(localized: "The on-device agent is not connected.")
+            case .emptyName: String(localized: "Type a workspace name.")
+            case .duplicateName: String(localized: "A workspace with that name already exists.")
+            }
+        }
     }
 
     /// The first prompt of a session started from the home screen, waiting for
@@ -3558,7 +3938,7 @@ final class AppModel {
                 log.add(.cache, "session list for \(tag.hostId) dropped, the machine changed under it")
                 return
             }
-            sessions = result.items
+            sessions = Self.scoped(result.items, to: engineScope)
             sessionsAreKnown = true
             await refreshWorkspaces()
             lastError = nil
@@ -3609,7 +3989,7 @@ final class AppModel {
             // The stored list is *this* computer's registry: "the host has no such
             // workspace" is only an answer about the host that said it.
             guard tag == currentTag else { return }
-            workspaces = result.items
+            workspaces = Self.scoped(result.items, to: engineScope)
         } catch {
             // Left alone on purpose. See above.
         }
@@ -4712,6 +5092,10 @@ final class AppModel {
     /// not a broken one, and an error here would be a failure screen over a
     /// feature the operator may not even want.
     func syncPushRegistration() async {
+        // The kernel answers `push.register` with `{registered: false}` -- it has
+        // no push channel -- so registering is a round trip that can only say
+        // no. Skipped here rather than left to the kernel's polite refusal.
+        guard !isLocalAgentMode else { return }
         guard let connection, let token = PushRegistration.storedToken else { return }
         var fields: [String: JSONValue] = [
             "token": .string(token),
@@ -5104,6 +5488,12 @@ final class AppModel {
         preferring preferred: PairedHost.Endpoint? = nil,
     ) async throws {
         phase = .connecting
+        // The agent this connection is for, before anything reads a list. Every
+        // dial comes through here -- a launch, a tap on the computer list, a
+        // reconnect after the relay moved -- and the choice belongs to the
+        // pairing, so deriving it here is what keeps a relaunch from falling
+        // back to "all agents" and drawing three agents' folders under one name.
+        engineScope = host.engine.flatMap(AgentEngine.init(rawValue:))
         // Before the first request, not after it. Everything below waits on a
         // machine that may be asleep, and a session list that is empty until a
         // round trip lands is empty for as long as the round trip takes -- which
@@ -5295,7 +5685,35 @@ final class AppModel {
         if case .relay(let baseURL) = answer.endpoint, host.baseURL != baseURL {
             await rememberRelayBaseURL(baseURL)
         }
-        // A socket is open, so whatever the last dial failed with is no longer
+        await finishAdopting()
+    }
+
+    /// The on-device agent's handshake has completed: the same tail as a computer.
+    private func adoptLocal(_ started: LocalAgentController.Started) async {
+        // A new subject, exactly as a socket is: the epoch is what says whose
+        // answers the host-scoped state belongs to.
+        nextConnectionEpoch += 1
+        connectionEpoch = nextConnectionEpoch
+        connection = started.connection
+        welcome = started.welcome
+        log.add(
+            .connection,
+            "connected to the on-device agent (\(started.welcome.hostName)), protocol "
+                + "\(started.welcome.protocolVersion), in process",
+        )
+        // No route: the frames never leave the process, so there is no address
+        // to name and nothing to switch between.
+        activeEndpoint = nil
+        await finishAdopting()
+    }
+
+    /// Everything a freshly handshaken connection needs, whoever it is to.
+    ///
+    /// Split out so the two adopters cannot drift: the session list, the poll
+    /// and the ready phase are the same facts whether the frames came off a
+    /// socket or out of this process.
+    private func finishAdopting() async {
+        // A link is open, so whatever the last dial failed with is no longer
         // what is wrong.
         connectionError = nil
         phase = .ready
@@ -5305,13 +5723,21 @@ final class AppModel {
         beginAutomaticRefresh()
         await refreshSessions()
         endAutomaticRefresh()
-        // After the session list, so the first screen is not waiting on a
-        // registration the operator never asked for. A round trip, not a
-        // dependency: the app works identically whether or not it lands.
-        await syncPushRegistration()
-        // The plan may have changed while the app was unpaired or offline; the
-        // first live socket is the first chance to align the tunnel's relay.
-        await syncRelayTier()
+        // Both are about reaching the phone from a computer: the push
+        // registration that wakes this app, and the relay tier the host's
+        // tunnel should use. The on-device agent has neither -- the kernel
+        // answers `push.register` with `{registered: false}` and has no tunnel --
+        // so this is one place the two hosts genuinely differ.
+        if !isLocalAgentMode {
+            // After the session list, so the first screen is not waiting on a
+            // registration the operator never asked for. A round trip, not a
+            // dependency: the app works identically whether or not it lands.
+            await syncPushRegistration()
+            // The plan may have changed while the app was unpaired or offline;
+            // the first live socket is the first chance to align the tunnel's
+            // relay.
+            await syncRelayTier()
+        }
         startInteractionPoll()
 
         if let requested = Self.launchSelectedSession {
@@ -5384,6 +5810,10 @@ final class AppModel {
                 token: host.deviceToken,
                 appVersion: Self.appVersion,
                 deviceModel: Self.deviceModel,
+                // The agent this pairing was opened for. The computer filters
+                // everything it sends by it, and a token the relay scoped wins
+                // over it on the computer's side, so this cannot widen anything.
+                engine: host.engine,
                 // The handshake is given the same leash as the dial. A socket
                 // that opens and then says nothing is otherwise a screen stuck
                 // on "Connecting…" for as long as the process lives, and this
@@ -5397,6 +5827,7 @@ final class AppModel {
                 token: host.deviceToken,
                 appVersion: Self.appVersion,
                 deviceModel: Self.deviceModel,
+                engine: host.engine,
                 baseURL: baseURL,
                 handshakeTimeout: .seconds(timeout),
                 relayHeaders: relayHeaders,
@@ -5407,6 +5838,7 @@ final class AppModel {
                 token: host.deviceToken,
                 appVersion: Self.appVersion,
                 deviceModel: Self.deviceModel,
+                engine: host.engine,
                 handshakeTimeout: .seconds(timeout),
                 relayHeaders: relayHeaders,
                 p2p: P2PRoute(relayBaseURL: relayBaseURL, endpointId: endpointId),

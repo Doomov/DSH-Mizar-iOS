@@ -47,6 +47,7 @@ struct ConnectionPanel: View {
                             if model.reconnecting { ProgressView().controlSize(.small) }
                             Text(model.reconnecting ? "Trying…" : "Reconnect")
                         }
+                        .foregroundStyle(Theme.onAccent)
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glassProminent)
@@ -128,6 +129,7 @@ struct ConnectionPanel: View {
         }
         // The same fact the sidebar's footer is drawn from; the model owns the
         // classification so the two lines cannot disagree.
+        if model.isLocalAgentMode { return String(localized: "On this device") }
         if model.isLocalCommunication { return String(localized: "On the local network") }
         switch model.activeEndpoint {
         case .relay(let baseURL):
@@ -308,7 +310,7 @@ private struct PollDial: View {
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: fraction)
-            TwinStar(size: 9, period: 2)
+            MizarStar(ink: 13, motion: .running)
         }
         .frame(width: 20, height: 20)
     }

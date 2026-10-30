@@ -42,6 +42,7 @@ private func responderAnswering(_ answer: @escaping @Sendable (String) -> String
         let id = correlationId(of: text) ?? ""
         return [frame.replacingOccurrences(of: "$ID", with: id)]
     }
+
 }
 
 @Suite("MizarConnection")
@@ -418,6 +419,50 @@ struct ConnectionTests {
         }
         #expect(ended, "an event stream registered after the close never finished")
     }
+
+    @Test("binary state frames drive the session state")
+    func stateChannel() async throws {
+        let transport = StubTransport(responder: responder())
+        let connection = makeConnection(transport: transport)
+        _ = try await connection.connect()
+
+        let sent = await transport.sent
+        #expect(sent.contains { $0.contains("state.subscribe") })
+
+        func envelope(_ frame: StateFrame, session: String = "s-1") -> WebSocketFrame {
+            var out = Data([UInt8(session.utf8.count)])
+            out.append(contentsOf: session.utf8)
+            out.append(frame.encoded())
+            return .binary(out)
+        }
+
+        await transport.push(frame: envelope(StateFrame(state: .thinking, interval: 1, flags: [])))
+        #expect(await stateSettles { await connection.sessionState("s-1") == .thinking })
+
+        await transport.push(frame: envelope(
+            StateFrame(state: .streamFinal, interval: 2, flags: [.snapshot, .append], text: "先说")
+        ))
+        #expect(await stateSettles { await connection.streamedText("s-1") == "先说" })
+
+        await transport.push(frame: envelope(
+            StateFrame(state: .streamFinal, interval: 2, textSeq: 6, flags: [.append], text: "结论")
+        ))
+        #expect(await stateSettles { await connection.streamedText("s-1") == "先说结论" })
+
+        await transport.push(frame: envelope(StateFrame(state: .completed, interval: 3, flags: [])))
+        #expect(await stateSettles { await connection.sessionState("s-1") == .completed })
+    }
+
+    /// Poll until the read loop has caught up: "pushed" is not "applied".
+    private func stateSettles(
+        _ condition: @Sendable () async -> Bool,
+    ) async -> Bool {
+        for _ in 0..<100 {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
+    }
 }
 
 // MARK: - Test doubles
@@ -438,7 +483,7 @@ actor FlakyTransport: WebSocketTransport {
     private let failuresBeforeSuccess: Int
     private(set) var attempts = 0
     private var queue: [String?] = []
-    private var waiting: [CheckedContinuation<String?, any Error>] = []
+    private var waiting: [CheckedContinuation<WebSocketFrame?, any Error>] = []
 
     init(failuresBeforeSuccess: Int) {
         self.failuresBeforeSuccess = failuresBeforeSuccess
@@ -457,12 +502,15 @@ actor FlakyTransport: WebSocketTransport {
         while let waiter = waiting.first, let next = queue.first {
             waiting.removeFirst()
             queue.removeFirst()
-            waiter.resume(returning: next)
+            waiter.resume(returning: next.map { WebSocketFrame.text($0) })
         }
     }
 
-    func receive() async throws -> String? {
-        if !queue.isEmpty { return queue.removeFirst() }
+    func receive() async throws -> WebSocketFrame? {
+        if let next = queue.first {
+            queue.removeFirst()
+            return next.map { WebSocketFrame.text($0) }
+        }
         return try await withCheckedThrowingContinuation { continuation in
             waiting.append(continuation)
         }

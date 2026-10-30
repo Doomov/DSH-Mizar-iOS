@@ -35,6 +35,16 @@ public struct WorkspaceGroup: Sendable, Equatable, Identifiable {
     /// The sessions in it, newest activity first.
     public let sessions: [SessionRow]
 
+    /// Which agent this workspace belongs to, when the row said.
+    ///
+    /// A computer that fronts DSH, Claude Code and Codex sends one merged list
+    /// to a connection that did not choose an agent, and the three groups are
+    /// not interchangeable: two folders can share a name, and a heading that
+    /// does not say whose it is reads as DSH's. `nil` for a single-agent host,
+    /// for a group built from directories rather than from the registry, and for
+    /// the leftover group.
+    public let engine: String?
+
     /// The path, because two workspaces cannot share one.
     public var id: String { path }
 
@@ -55,10 +65,47 @@ public struct WorkspaceGroup: Sendable, Equatable, Identifiable {
     /// can see rather than something they have to read.
     public var isUnclaimed: Bool { path == Self.unclaimedId }
 
-    public init(path: String, title: String, sessions: [SessionRow]) {
+    public init(
+        path: String,
+        title: String,
+        sessions: [SessionRow],
+        engine: String? = nil,
+    ) {
         self.path = path
         self.title = title
         self.sessions = sessions
+        self.engine = engine
+    }
+}
+
+extension WorkspaceRow {
+    /// The agent this row names, when it names one.
+    ///
+    /// The host's own `engine` field first; else the id's prefix, which is the
+    /// same spelling (`dsh:<workspace-id>`). `nil` is "no marker": a host that
+    /// fronts one agent -- the old plugin, the on-device kernel -- and a row
+    /// written before this field existed.
+    public var namedEngine: String? {
+        if let engine, !engine.isEmpty { return engine }
+        guard let prefix = workspaceId.split(separator: ":", maxSplits: 1).first,
+              prefix.count < workspaceId.count,
+              WorkspaceCatalog.knownAgents.contains(String(prefix))
+        else { return nil }
+        return String(prefix)
+    }
+}
+
+extension SessionRow {
+    /// The agent this row names, when it names one.
+    ///
+    /// Session ids carry the agent as a prefix (`dsh:session-…`) on a host that
+    /// fronts several of them, and nothing on a host that fronts one.
+    public var namedEngine: String? {
+        guard let prefix = sessionId.split(separator: ":", maxSplits: 1).first,
+              prefix.count < sessionId.count,
+              WorkspaceCatalog.knownAgents.contains(String(prefix))
+        else { return nil }
+        return String(prefix)
     }
 }
 
@@ -77,6 +124,61 @@ public struct WorkspaceChoice: Sendable, Equatable, Identifiable {
 
 /// The workspaces the host has, arranged for the two screens that show them.
 public enum WorkspaceCatalog {
+    /// The rows a connection bound to one agent may draw.
+    ///
+    /// One computer runs several agents and they share nothing, so a phone that
+    /// opened DSH must not draw Codex's folders -- the reported shape was DSH's
+    /// five workspaces with two of Codex's under them, empty, because the
+    /// sessions in them had already been filtered out on the other half of the
+    /// screen.
+    ///
+    /// The rule reads the row's own label first and the id's prefix second, and
+    /// keeps a row that names neither. A host that fronts one agent sends bare
+    /// ids (the old plugin, the on-device kernel), and dropping those would empty
+    /// a list that is already correct.
+    ///
+    /// - Parameters:
+    ///   - workspaces: the rows the host sent, or the ones stored on the phone.
+    ///   - engine: the wire name of the agent this connection is bound to, or
+    ///     `nil` for "all agents".
+    /// - Returns: the rows to draw.
+    public static func scoped(
+        _ workspaces: [WorkspaceRow],
+        to engine: String?,
+    ) -> [WorkspaceRow] {
+        guard let engine, !engine.isEmpty else { return workspaces }
+        return workspaces.filter { $0.namedEngine.map { $0 == engine } ?? true }
+    }
+
+    /// The session rows a connection bound to one agent may draw.
+    ///
+    /// The same rule as {@link scoped(_:to:)} for workspaces, over the other half
+    /// of the list: a session id is `<agent>:<id>` on a host that fronts several
+    /// agents, and a bare id on one that fronts a single agent.
+    ///
+    /// - Parameters:
+    ///   - sessions: the rows the host listed, or the ones stored.
+    ///   - engine: the wire name, or `nil` for all of them.
+    /// - Returns: the rows to draw.
+    public static func scoped(
+        _ sessions: [SessionRow],
+        to engine: String?,
+    ) -> [SessionRow] {
+        guard let engine, !engine.isEmpty else { return sessions }
+        return sessions.filter { session in
+            guard let named = session.namedEngine else { return true }
+            return named == engine
+        }
+    }
+
+    /// The agents a host that fronts several of them can name, as wire names.
+    ///
+    /// A closed list on purpose: it is `EngineId`'s spelling, and a prefix that
+    /// is not on it is part of a session's own id rather than an agent. Reading
+    /// any leading token as an agent would turn a session called `build:steps`
+    /// into a fourth agent and hide it from every list.
+    public static let knownAgents: Set<String> = ["dsh", "claude", "codex"]
+
     /// The sections of the session list.
     ///
     /// - Parameters:
@@ -168,6 +270,11 @@ public enum WorkspaceCatalog {
                 // shown instead of a heading with nothing under it.
                 title: workspace.title.isEmpty ? workspace.path : workspace.title,
                 sessions: newestFirst(held),
+                // The row's own field, else the id's prefix -- the same two
+                // sources the phone's scope filter reads, so the badge and the
+                // filter cannot disagree about whose folder this is.
+                engine: workspace.engine
+                    ?? workspace.workspaceId.split(separator: ":", maxSplits: 1).first.map(String.init),
             )
         }
 

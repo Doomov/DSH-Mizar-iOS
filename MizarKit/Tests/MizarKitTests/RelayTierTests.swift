@@ -17,7 +17,8 @@ import Testing
 @Suite("Relay tiers")
 struct RelayTierTests {
     private let free = "https://dshmizar.shirazu-nagisa.com"
-    private let paid = "https://dshmizar-1.shirazu-nagisa.com"
+    // The account-gated relay: same host, own port, no anonymous traffic.
+    private let paid = "https://dshmizar-1.shirazu-nagisa.com:8443"
 
     @Test("the plan chooses the matching public relay")
     func baseURLByPlan() {

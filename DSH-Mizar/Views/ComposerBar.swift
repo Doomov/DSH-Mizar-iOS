@@ -165,7 +165,10 @@ struct ComposerBar: View {
         .buttonStyle(.pressable)
         .mizarPopover(isPresented: $showingCommands, arrowEdge: .bottom) {
             CommandList(
-                canAttach: model.advancedFeaturesUnlocked,
+                // The kernel has no upload: `upload.*` answers NOT_IMPLEMENTED
+                // and a prompt carrying `attachmentIds` is refused outright.
+                // Offering the buttons would be offering a guaranteed failure.
+                canAttach: model.advancedFeaturesUnlocked && !model.isLocalAgentMode,
                 onAttachment: { kind in
                     // Closed first: the picker is presented by the composer, and
                     // a popover that stays up over the photo sheet hides it.

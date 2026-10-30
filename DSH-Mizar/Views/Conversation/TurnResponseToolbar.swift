@@ -45,30 +45,35 @@ struct TurnResponseToolbar: View {
                     copied = false
                 }
 
-                Button {
-                    guard !branching, let seq = turn.endSeq, unavailableReason == nil else { return }
-                    branching = true
-                    failure = nil
-                    Task { @MainActor in
-                        defer { branching = false }
-                        do {
-                            try await model.forkSession(sessionId: sessionId, atSeq: seq)
-                        } catch {
-                            failure = error.localizedDescription
+                // Forking is a host feature the kernel does not implement: it
+                // has the records but not the machinery to branch a session at a
+                // turn. Hidden rather than disabled, like the attachments.
+                if !model.isLocalAgentMode {
+                    Button {
+                        guard !branching, let seq = turn.endSeq, unavailableReason == nil else { return }
+                        branching = true
+                        failure = nil
+                        Task { @MainActor in
+                            defer { branching = false }
+                            do {
+                                try await model.forkSession(sessionId: sessionId, atSeq: seq)
+                            } catch {
+                                failure = error.localizedDescription
+                            }
                         }
+                    } label: {
+                        Image(systemName: "arrow.triangle.branch")
+                            .opacity(branching ? 0.4 : 1)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
-                } label: {
-                    Image(systemName: "arrow.triangle.branch")
-                        .opacity(branching ? 0.4 : 1)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .disabled(branching || unavailableReason != nil)
-                .accessibilityLabel(Text("Branch in a new conversation"))
-                .accessibilityHint(Text(unavailableReason ?? (branching ? String(localized: "Branching…") : "")))
-                .help(unavailableReason ?? String(localized: "Branch in a new conversation"))
-                .accessibilityIdentifier("\(prefix).branch")
+                    .disabled(branching || unavailableReason != nil)
+                    .accessibilityLabel(Text("Branch in a new conversation"))
+                    .accessibilityHint(Text(unavailableReason ?? (branching ? String(localized: "Branching…") : "")))
+                    .help(unavailableReason ?? String(localized: "Branch in a new conversation"))
+                    .accessibilityIdentifier("\(prefix).branch")
 
+                }
                 // Metadata may wrap on a narrow phone or at accessibility sizes;
                 // the action hit targets never shrink and the reading order stays fixed.
                 ViewThatFits(in: .horizontal) {

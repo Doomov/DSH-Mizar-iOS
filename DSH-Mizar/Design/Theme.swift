@@ -5,10 +5,11 @@
 //  The few numbers the whole app is drawn with.
 //
 //  Restraint is the design: one accent, one radius scale, one spacing grid. The
-//  accent is the asset catalogue's `AccentColor` -- a cyan that is deep enough to
-//  carry white text in the light appearance and bright enough to glow in the dark
-//  one -- and everything else is the system's own neutrals, so the accent is the
-//  only colour on screen that means anything.
+//  accent is the asset catalogue's `AccentColor` -- a cyan deep enough to carry
+//  white text in the light appearance, and white itself in the dark one, where
+//  the mark is white and a blue accent beside it reads as a second colour the
+//  product does not have. `onAccent` is the ink that goes on top, so the pair
+//  inverts together: white on cyan, near-black on white.
 //
 //  Every radius here is meant for `style: .continuous`. A circular-arc corner is
 //  the one detail that makes a SwiftUI screen look like a web page.

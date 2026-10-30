@@ -61,7 +61,7 @@ func withMizarAnimation<Result>(_ animation: Animation = .mizarSmooth, _ body: (
 /// to them.
 ///
 /// Decoration that animates for ever -- the shimmer over a running turn's
-/// headline, the twin star's orbit, a pulsing glyph -- redraws its layer on
+/// headline, the turning mark, a pulsing glyph -- redraws its layer on
 /// every frame it runs. While a drawer is being dragged or is settling,
 /// those frames belong to the card the finger is moving: the card carries a
 /// full-screen mask, a blurred shadow and glass, and content that changes

@@ -171,9 +171,9 @@ final class ActivityUITests: XCTestCase {
     /// thing a person would do and removes that race.
     private func openSessionIfNeeded(_ app: XCUIApplication) {
         if app.textViews["composer.field"].waitForExistence(timeout: 5) { return }
-        // The shared helper, not a raw tap: on the home page there is no
-        // navigation item to tap, and the drawer's own swipe is the way in.
-        openSidebar(app)
+        if !app.buttons["sessions.new"].exists {
+            app.buttons["shell.sidebarToggle"].tap()
+        }
         // The fixture's session lives inside the collapsed `demo` workspace.
         // Expanding it is what a person would do; `-mizarSelectSession` normally
         // bypasses the sidebar, but that selection can race the first list read.
@@ -191,6 +191,20 @@ final class ActivityUITests: XCTestCase {
     }
 
     /// Bring the sidebar out, if it is not out already.
+    /// - Parameter app: the running app.
+    private func openSidebar(_ app: XCUIApplication) {
+        let marker = app.buttons["sessions.new"]
+        if marker.exists, marker.isHittable { return }
+        let toggle = app.buttons["shell.sidebarToggle"]
+        expect(toggle, "there is no way to open the sidebar")
+        toggle.tap()
+        let shown = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: marker,
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
+    }
+
     /// Find an element by accessibility identifier, whatever its type.
     ///
     /// - Parameters:

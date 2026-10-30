@@ -236,6 +236,23 @@ final class ForkedSessionUITests: XCTestCase {
     /// Idempotent: whether it is out depends on how the test launched, and the
     /// new-session row being hittable is the sidebar being in front.
     ///
+    /// - Parameter app: the running app.
+    private func openSidebar(_ app: XCUIApplication) {
+        let marker = app.buttons["sessions.new"]
+        // A launch with nothing selected leaves the list out, so this is
+        // normally already true; it is checked rather than assumed because the
+        // suite must not depend on which screen the launch happened to land on.
+        if marker.exists, marker.isHittable { return }
+        let toggle = app.buttons["shell.sidebarToggle"]
+        expect(toggle, "there is no way to open the sidebar")
+        toggle.tap()
+        let shown = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: marker,
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
+    }
+
     /// The row that opens the fork's conversation, under either name it can be
     /// drawn with.
     ///

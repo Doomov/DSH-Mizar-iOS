@@ -268,6 +268,20 @@ final class LANFailoverUITests: XCTestCase {
     /// is normally already true; it is checked rather than assumed because the
     /// suite must not depend on which screen the launch happened to land on.
     ///
+    /// - Parameter app: the running app.
+    private func openSidebar(_ app: XCUIApplication) {
+        let marker = app.buttons["sessions.new"]
+        if marker.exists, marker.isHittable { return }
+        let toggle = app.buttons["shell.sidebarToggle"]
+        expect(toggle, "there is no way to open the sidebar")
+        toggle.tap()
+        let shown = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: marker,
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
+    }
+
     // MARK: - Expectations
 
     /// Wait for an element to exist.

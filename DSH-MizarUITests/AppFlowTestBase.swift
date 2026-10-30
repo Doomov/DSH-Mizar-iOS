@@ -699,6 +699,27 @@ class AppFlowTestBase: XCTestCase {
     /// The new-session row being hittable is the sidebar being in front -- it is
     /// hidden from the accessibility tree while the conversation covers it.
     ///
+    /// - Parameter app: the running app.
+    func openSidebar(_ app: XCUIApplication) {
+        let marker = app.buttons["sessions.new"]
+        if marker.exists, marker.isHittable { return }
+        let toggle = app.buttons["shell.sidebarToggle"]
+        if !toggle.waitForExistence(timeout: Self.patience) {
+            // A system dialog that arrived late covers the shell and eats the
+            // tap. Dismiss it and look once more before calling it a failure.
+            dismissSystemAlertIfPresent(app)
+            if !toggle.waitForExistence(timeout: Self.patience) {
+                expect(toggle, "there is no way to open the sidebar")
+            }
+        }
+        toggle.tap()
+        let shown = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: marker,
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
+    }
+
     /// Put the list of computers away.
     ///
     /// The sheet closes by itself once a switch has landed, so this only taps

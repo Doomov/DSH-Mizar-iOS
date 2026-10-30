@@ -9,9 +9,9 @@
 //
 //  Not the whole screen, deliberately: `SettingsView` draws in a `List`, which
 //  renders nothing under `ImageRenderer` (the
-//  `SettingsAccountRowSnapshotTests` precedent); its header carries
-//  `MizarMarkConnecting`, a repeating keyframe animation the render cannot
-//  stop; and its row titles and footers resolve through `String(localized:)`,
+//  `SettingsAccountRowSnapshotTests` precedent); its header carries the mark's
+//  one-shot flick, which a render transaction cannot play to a stop; and its row
+//  titles and footers resolve through `String(localized:)`,
 //  which follows the process language and cannot be driven by a render-local
 //  locale. So the sections the UI test asserts on are rebuilt here from the
 //  same catalogue keys the app renders -- `Text` and `Label` literals, which

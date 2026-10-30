@@ -15,13 +15,13 @@
 //  that reached neither screen can only come back by failing this test or the
 //  contract, without a 20-second launch.
 //
-//  `MizarMarkSearching` animates its arcs with a repeating keyframe animator,
-//  which no transaction can stop, and `accessibilityReduceMotion` is a
-//  get-only environment key the harness cannot set. The app view therefore
-//  takes its mark as an injectable subview (`UnpairedView(mark:)`; the
-//  shipping `UnpairedView()` keeps the searching one), and this reference
-//  pins the resting state the animated arcs' reduce-motion branch rests on:
-//  `MizarMark(lit: 3)` at the same size and colours.
+//  `MizarStar`'s loop runs on a repeating keyframe animator, which no
+//  transaction can stop, and `accessibilityReduceMotion` is a get-only
+//  environment key the harness cannot set. The app view therefore takes its
+//  mark as an injectable subview (`UnpairedView(mark:)`; the shipping
+//  `UnpairedView()` keeps the turning one), and this reference pins the pose
+//  the loop's reduce-motion branch rests on: the star still, in the screen's
+//  own white ink, at the same size.
 //
 //  The screen's copy resolves through the app bundle in the simulator's own
 //  language, so this reference is pinned by recording on the canonical
@@ -50,11 +50,7 @@ struct UnpairedLaunchSnapshotTests {
 
         let snapshot = try SnapshotHarness.assertSnapshot(
             of: UnpairedView(
-                mark: MizarMark(
-                    lit: 3,
-                    accent: SnapshotFixtures.brandCyan,
-                    ink: .white,
-                ),
+                mark: MizarStar(motion: .still, size: 112, palette: .ink(.white)),
             ),
             named: "UnpairedLaunch-unpaired",
             size: CGSize(width: 390, height: 844),

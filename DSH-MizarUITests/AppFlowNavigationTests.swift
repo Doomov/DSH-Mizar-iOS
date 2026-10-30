@@ -785,6 +785,59 @@ final class AppFlowNavigationTests: AppFlowTestBase {
         XCTAssertTrue(prompt.isHittable, "the conversation did not scroll to the chosen turn")
     }
 
+    /// Jumping between turns, over and over, must never wedge the screen.
+    ///
+    /// Reported as "tapping a turn sometimes freezes the app". The jump goes
+    /// through `ScrollViewReader` into a lazy stack, so the two ways it can go
+    /// wrong are a scroll to a row that was never built and a re-entrant update
+    /// between the jump and the visibility bookkeeping. Twenty jumps, both
+    /// directions, with a deadline on each: a screen that is still answering
+    /// after that has neither.
+    func testJumpingBetweenTurnsNeverWedges() {
+        let app = launch(pending: false)
+        expect(app.textViews["composer.field"], "the conversation never opened")
+        Thread.sleep(forTimeInterval: 1)
+
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.45))
+        let finish = app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.47))
+        start.press(forDuration: 0.05, thenDragTo: finish)
+
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "turnIndex.entry."))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: Self.patience), "the turn index never opened")
+        let count = rows.count
+        XCTAssertGreaterThan(count, 1, "the fixture has no turns to jump between")
+
+        for round in 0..<20 {
+            let index = round % count
+            let row = rows.element(boundBy: index)
+            guard row.waitForExistence(timeout: Self.patience) else {
+                XCTFail("the index stopped answering at round \(round)")
+                return
+            }
+            row.tap()
+            // The jump is done when the index is away and the conversation is
+            // back. Five seconds is generous for a scroll; a screen that misses
+            // it twice in a row is the freeze that was reported.
+            let gone = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false OR hittable == false"),
+                object: row,
+            )
+            XCTAssertEqual(
+                XCTWaiter().wait(for: [gone], timeout: 5),
+                .completed,
+                "jumping to turn \(index) did not put the index away (round \(round))",
+            )
+            // Re-open it the way the operator does, from the title, which is
+            // the route that does not depend on where the conversation landed.
+            let title = app.buttons["session.turnIndex"]
+            guard title.waitForExistence(timeout: 5) else {
+                XCTFail("the title stopped answering at round \(round)")
+                return
+            }
+            title.tap()
+        }
+    }
+
     /// The session's title is a button that opens the same index.
     func testTheTitleOpensTheTurnIndex() {
         let app = launch(pending: false)

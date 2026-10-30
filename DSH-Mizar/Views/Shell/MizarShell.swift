@@ -44,6 +44,12 @@ struct MizarShell: View {
     /// changes reaches them through observation.
     @State private var roots: ShellLayerRoots?
     @State private var placed = false
+    /// Whether a conversation has been on screen since launch.
+    ///
+    /// The drawer opens when a selection goes away, but a launch has no
+    /// selection to lose: the first `nil` is the app starting, not somebody
+    /// leaving a conversation.
+    @State private var hasOpenedASession = false
     #if DEBUG
     /// A debug launch asked for the right drawer; it is opened once a session
     /// has arrived to show in it, since the drawer's own close rides the same
@@ -133,8 +139,14 @@ struct MizarShell: View {
             // wants to see, so the card comes back. A selection that goes away
             // (a disconnect, a switch of computer) puts the list back in front.
             if selected != nil {
+                hasOpenedASession = true
                 shell.close()
-            } else if !shell.settledOpen {
+            } else if hasOpenedASession, !shell.settledOpen {
+                // Backing out of a conversation puts the list back in front,
+                // because that is where the operator came from. A launch is not
+                // that: nothing was left, and the page behind the drawer is the
+                // home page -- the month, the composer, the way back in -- which
+                // is a better answer to "open the app" than a folder list.
                 shell.open()
             }
             #if DEBUG

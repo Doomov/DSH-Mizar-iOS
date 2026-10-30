@@ -23,6 +23,9 @@ struct RootView: View {
     /// notice is up. Asked once per install: see `LocalAgentController`.
     @State private var showingLocalAgentNotice = false
 
+    /// Whether the cold-launch splash is still covering the app.
+    @State private var splashDone = false
+
     var body: some View {
         Group {
             // Nothing is decided until the stored session has been read: the
@@ -37,6 +40,15 @@ struct RootView: View {
         }
         .animation(.mizarSmooth, value: phaseKey)
         .animation(.mizarSmooth, value: requiresLogin)
+        // The splash is an overlay rather than a phase: it has to stay on top
+        // while the screen under it is being built, and leave on its own
+        // timing rather than the phase's.
+        .overlay {
+            if !splashDone {
+                SplashView { splashDone = true }
+                    .transition(.opacity)
+            }
+        }
         // The first connect waits for a signed-in account. Connecting behind the
         // gate would put bytes on the relay as a `guest:` identity, which is the
         // one thing the gate exists to prevent.

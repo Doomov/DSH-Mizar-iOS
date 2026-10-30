@@ -219,8 +219,13 @@ struct PreviewPane: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 24)
-                Button("See the account") { showingPaywall = true }
-                    .buttonStyle(.borderedProminent)
+                Button {
+                    showingPaywall = true
+                } label: {
+                    Text("See the account")
+                        .foregroundStyle(Theme.onAccent)
+                }
+                .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .accessibilityIdentifier("preview.locked.account")
             } else {

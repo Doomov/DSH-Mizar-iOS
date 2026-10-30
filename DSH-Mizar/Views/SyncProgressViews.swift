@@ -43,18 +43,17 @@ struct FirstLoadView: View {
 
     var body: some View {
         VStack(spacing: 26) {
-            // The mark fills as the history arrives: an arc for each third, the
-            // signal getting stronger, rather than a bar that says nothing about
-            // what is arriving. Searching, before there is a count to fill by.
+            // The mark assembles as the history arrives: the two layers start
+            // on top of each other -- a three-armed star -- and open to the
+            // icon's six by the end. Turning, before there is a count to open
+            // by. A bar would say how much; this says what is being assembled.
             Group {
                 if let progress, progress.total > 0 {
-                    MizarMark(lit: 0.35 + 2.65 * progress.fraction)
-                        .animation(.mizarGentle, value: progress.fraction)
+                    MizarStar(motion: .opening(progress.fraction), size: 96)
                 } else {
-                    MizarMarkSearching()
+                    MizarStar(motion: .running, size: 96)
                 }
             }
-            .frame(width: 96)
 
             VStack(spacing: 8) {
                 Text("Setting up")
@@ -129,9 +128,7 @@ struct SyncProgressSheet: View {
         NavigationStack {
             VStack(spacing: 16) {
                 if let progress, progress.total > 0 {
-                    MizarMark(lit: 0.35 + 2.65 * progress.fraction)
-                        .frame(width: 56)
-                        .animation(.mizarGentle, value: progress.fraction)
+                    MizarStar(motion: .opening(progress.fraction), size: 56)
                     Text("Syncing \(progress.completed) of \(progress.total)")
                         .font(.headline)
                         .monospacedDigit()

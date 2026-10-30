@@ -294,7 +294,8 @@ struct TurnIndexPanel: View {
             pick(turn)
         } label: {
             HStack(spacing: 5) {
-                TwinStar(size: 10, color: Theme.onAccent)
+                // White ink, because the capsule behind it is the accent.
+                MizarStar(ink: 14, motion: .running, palette: .ink(Theme.onAccent))
                 Text("Running now")
             }
             .font(.caption.weight(.medium))
@@ -600,7 +601,7 @@ private struct TurnIndexRow: View {
     @ViewBuilder private var node: some View {
         switch turn.state {
         case .running:
-            TwinStar(size: 13)
+            MizarStar(ink: 17, motion: .running)
         case .done:
             Circle()
                 .fill(onScreen ? Color.accentColor : Theme.running.opacity(0.85))

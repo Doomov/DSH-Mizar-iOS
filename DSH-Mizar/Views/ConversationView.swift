@@ -341,11 +341,11 @@ private struct TurnSummary: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            // The state, as a glyph that changes rather than appears: the twin
-            // star while it works, settling into a tick when it is done.
+            // The state, as a glyph that changes rather than appears: the mark
+            // turning while it works, settling into a tick when it is done.
             ZStack {
                 if turn.isRunning {
-                    TwinStar(size: 13)
+                    MizarStar(ink: 17, motion: .running)
                         .transition(.pop)
                 } else if turn.isEndInferred {
                     // A later turn proves this one is over, but the log never
@@ -364,19 +364,19 @@ private struct TurnSummary: View {
                         .transition(.pop)
                 }
             }
-            .frame(width: 16, height: 16)
+            // The running mark is 17 points of ink, and its box is that over
+            // the design margin (about 24); the column is wide enough that the
+            // arms do not crowd the headline.
+            .frame(width: 20, height: 20)
 
             headline
             Spacer(minLength: 8)
             // Only when the log actually said. A turn whose markers were trimmed
             // away by the pager shows no number rather than a zero it would be
             // counted as -- "no steps" is a claim this row cannot make.
-            if let stepCount = turn.stepCount, stepCount > 0 {
-                Text("\(stepCount) steps")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .contentTransition(.numericText())
-            }
+            // No step count and no disclosure: the host no longer streams the
+            // per-step detail this row used to open, so the number and the
+            // chevron would be an invitation to nothing.
             if showsChevron {
                 // A chevron that turns rather than swaps: the row is the same
                 // row open and shut, and the glyph saying so should be the same
@@ -493,9 +493,14 @@ private struct TurnActivitySummary: View {
     /// All three conditions are about the same idea: the advanced feature set, a
     /// turn that is running, and at least one detail worth opening. A chevron
     /// that opens an empty area is worse than no chevron.
-    private var canExpand: Bool {
-        turn.isRunning && model.advancedFeaturesUnlocked && !entries.isEmpty
-    }
+    /// Always false now.
+    ///
+    /// The per-step detail this row opened was the full-transfer feed, and the
+    /// host stopped sending it: the phone draws the same "what is it doing"
+    /// answer from the state channel instead (see `LiveTurnBlock`), inline and
+    /// without a second network read. A row that offered a drawer over the top
+    /// of that would be the same information twice, so there is no drawer.
+    private var canExpand: Bool { false }
 
     /// What the poll is keyed on: it runs while this turn is running and the
     /// advanced feature set is available, and stops — clearing what it found —
@@ -504,7 +509,8 @@ private struct TurnActivitySummary: View {
     /// route change away from the LAN just as it is on a plan ending, and the
     /// same change stops the poll in both cases.
     private var pollKey: String? {
-        guard turn.isRunning, model.advancedFeaturesUnlocked else { return nil }
+        // The activity feed is not drawn any more, so nothing polls for it.
+        guard false, turn.isRunning, model.advancedFeaturesUnlocked else { return nil }
         return "\(turn.turn ?? -1)"
     }
 

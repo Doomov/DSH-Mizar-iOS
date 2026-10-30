@@ -356,6 +356,11 @@ struct ApprovalCard: View {
                     Task { await answer(.allowedOnce) }
                 } label: {
                     buttonLabel("Allow once", busy: answering == .allowedOnce)
+                        // The prominent style fills with the accent; the label
+                        // has to be the ink that goes on the accent, which is
+                        // white in the light appearance and near-black in the
+                        // dark one. Reject above keeps its tint's own colour.
+                        .foregroundStyle(Theme.onAccent)
                 }
                 .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("approval.allowOnce")
@@ -418,6 +423,7 @@ struct QuestionCard: View {
                         .opacity(submitting ? 0 : 1)
                     if submitting { ProgressView().controlSize(.small) }
                 }
+                .foregroundStyle(Theme.onAccent)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)

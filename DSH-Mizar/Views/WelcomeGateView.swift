@@ -44,8 +44,7 @@ struct WelcomeGateView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     Spacer(minLength: 40)
-                    MizarMarkConnecting(accent: Color(red: 0.235, green: 0.796, blue: 0.957), ink: .white)
-                        .frame(width: 92)
+                    MizarStar(motion: .flick, size: 92, palette: .ink(.white))
                         .padding(.bottom, 30)
 
                     Text("Sign in to get started")
@@ -74,6 +73,7 @@ struct WelcomeGateView: View {
                         } label: {
                             Text("Sign in")
                                 .font(.headline)
+                                .foregroundStyle(Theme.onAccent)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
                         }

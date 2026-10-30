@@ -19,6 +19,9 @@ struct RootView: View {
     /// bit that tells those two apart, and a refresh on every inactive->active
     /// would be a reconnect the operator did not ask for.
     @State private var returningFromBackground = false
+    /// Whether the one-time "the on-device agent stops in the background"
+    /// notice is up. Asked once per install: see `LocalAgentController`.
+    @State private var showingLocalAgentNotice = false
 
     var body: some View {
         Group {
@@ -80,6 +83,24 @@ struct RootView: View {
             Button("OK", role: .cancel) { model.trafficNotice = false }
         } message: {
             Text("This account has carried its whole daily allowance on the relay. It resets at 00:00 UTC; connecting directly over the local network still works.")
+        }
+        // The one thing the local agent cannot do is what people will assume it
+        // can: keep working with the screen off. Said once, at the moment the
+        // mode is entered, and remembered.
+        .alert(
+            Text("The on-device agent stops in the background"),
+            isPresented: $showingLocalAgentNotice,
+        ) {
+            Button("Understood") {
+                model.localAgent.noteBackgroundNoticeShown()
+                showingLocalAgentNotice = false
+            }
+        } message: {
+            Text("Leaving the app or locking the screen stops it. Its sessions stay on this device.")
+        }
+        .onChange(of: model.mode) { _, mode in
+            guard mode == .local, !model.localAgent.hasShownBackgroundNotice else { return }
+            showingLocalAgentNotice = true
         }
         // Initial as well as changes: a launch starts active, and that is the
         // state the running poll needs before the first session list arrives.
@@ -251,8 +272,7 @@ private extension RootView {
 private struct LaunchingView: View {
     var body: some View {
         VStack(spacing: 20) {
-            MizarMarkSearching()
-                .frame(width: 64)
+            MizarStar(motion: .running, size: 64)
             Text("Connecting…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -302,32 +322,30 @@ private struct UnreachableView: View {
                     }
                 }
             } label: {
-                if model.reconnecting {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Trying…")
+                Group {
+                    if model.reconnecting {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Trying…")
+                        }
+                    } else {
+                        Text("Try again")
                     }
-                } else {
-                    Text("Try again")
                 }
+                .foregroundStyle(Theme.onAccent)
             }
             .buttonStyle(.borderedProminent)
             .disabled(model.reconnecting)
             .accessibilityIdentifier("failure.retry")
             // Windows out of the buttons, not links: this screen has no
             // navigation stack, so the links it used to carry went nowhere.
-            if !model.hosts.isEmpty {
-                Button("Choose another computer") { showingHosts = true }
-                    .mizarPopover(isPresented: $showingHosts) {
-                        HostListView()
-                            .frame(width: PopoverSize.compact.width, height: PopoverSize.compact.height)
-                    }
-            } else {
-                Button("Scan a code") { showingPairing = true }
-                    .sheet(isPresented: $showingPairing) {
-                        PairingSheet()
-                    }
-            }
+            // The list is the only way in now: an on-device agent, and the
+            // computers this account owns. There is no code to scan.
+            Button("Choose an agent") { showingHosts = true }
+                .mizarPopover(isPresented: $showingHosts) {
+                    HostListView()
+                        .frame(width: PopoverSize.compact.width, height: PopoverSize.compact.height)
+                }
         }
     }
 }

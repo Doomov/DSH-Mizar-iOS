@@ -56,6 +56,13 @@ struct SettingsView: View {
     /// The preview cache, for the 文件 section. Optional because the snapshot
     /// suite renders this screen without the shell's environment around it.
     @Environment(PreviewCenter.self) private var preview: PreviewCenter?
+    /// Whether the "clear the on-device agent's data" confirmation is up.
+    @State private var confirmingLocalClear = false
+    /// What the on-device agent holds, measured when the screen opens.
+    ///
+    /// Not computed per render: it walks a directory tree, and this screen is
+    /// redrawn for every keystroke in the log settings above it.
+    @State private var localAgentBytes: Int64?
 
     var body: some View {
         NavigationStack {
@@ -67,6 +74,7 @@ struct SettingsView: View {
                 notificationsSection
                 liveActivitySection
                 transferSection
+                localAgentSection
                 filesSection
                 feelSection
                 logsSection
@@ -95,6 +103,8 @@ struct SettingsView: View {
                 // notification centre that nothing else needs.
                 permission = await NotificationPermission.current()
                 await model.credits.start()
+                model.localAgent.refreshKeyPresence()
+                localAgentBytes = model.localAgent.storedByteCount
             }
             .sheet(item: $sharing) { archive in
                 ShareSheet(items: [archive.url])
@@ -105,24 +115,33 @@ struct SettingsView: View {
         }
     }
 
+    /// What the app is talking to, under its name.
+    ///
+    /// "No computer paired yet" is true and unhelpful while the on-device agent
+    /// is the host: nothing is paired, and the thing answering is this phone.
+    private var headerSubtitle: String {
+        if model.isLocalAgentMode { return String(localized: "On-Device Agent") }
+        if let host = model.host {
+            return String(format: String(localized: "Paired with %@"), host.displayName)
+        }
+        return String(localized: "No computer paired yet")
+    }
+
     // MARK: - Header
 
     /// What this is, before what it does: the icon, the name, the version.
     private var header: some View {
         Section {
             HStack(spacing: 16) {
-                MizarMarkConnecting(accent: Color(red: 0.235, green: 0.796, blue: 0.957), ink: .white)
-                    .frame(width: 36)
-                    .frame(width: 64, height: 64)
-                    .background(
-                        LinearGradient(colors: [Theme.navy, Theme.navyDeep], startPoint: .top, endPoint: .bottom),
-                        in: RoundedRectangle(cornerRadius: 15, style: .continuous),
-                    )
-                    .shadow(color: Theme.navy.opacity(0.35), radius: 10, y: 4)
+                // The app's own icon, drawn rather than pasted: the star nudges
+                // both layers once as the screen opens, which is the only place
+                // in this sheet where the brand is allowed to introduce itself.
+                MizarIconTile(size: 64, motion: .flick)
+                    .shadow(color: Theme.navy.opacity(0.22), radius: 8, y: 3)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: "DSH-Mizar")
                         .font(.title2.weight(.bold))
-                    Text(model.host.map { String(format: String(localized: "Paired with %@"), $0.displayName) } ?? String(localized: "No computer paired yet"))
+                    Text(headerSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -358,6 +377,77 @@ struct SettingsView: View {
     /// route is dialled or probed again until it is turned back on. The footers
     /// say so plainly, because a switch that only changes the next reconnect is
     /// how "I turned that off" became a bug report.
+    // MARK: - 本地 Agent
+
+    /// The agent that runs on this phone: one screen, and the promise that it
+    /// stops when the app does.
+    ///
+    /// The promise is the footer rather than a switch, because there is no
+    /// switch: iOS suspends the process, and pretending otherwise on a settings
+    /// screen would be the one lie this app does not tell.
+    private var localAgentSection: some View {
+        Section {
+            NavigationLink {
+                LocalAgentModelsView(agent: model.localAgent) {
+                    Task { await model.reloadCatalogs() }
+                }
+            } label: {
+                Label("Model configuration", systemImage: "cpu")
+            }
+            .accessibilityIdentifier("settings.localAgent.models")
+
+            Button(role: .destructive) {
+                confirmingLocalClear = true
+            } label: {
+                HStack(spacing: 8) {
+                    Label("Clear local sessions", systemImage: "trash")
+                    Spacer(minLength: 4)
+                    if let localAgentBytes {
+                        Text(ByteCountFormatter.string(fromByteCount: localAgentBytes, countStyle: .file))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .accessibilityIdentifier("settings.localAgent.clear")
+        } header: {
+            Text("On-Device Agent (Experimental)")
+        } footer: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("The on-device agent works only while this app is in the foreground. Leaving the app or locking the screen stops a running turn. It does not use the relay and does not consume account credits.")
+                Text("Its workspaces are folders in this app's Documents directory: open the Files app, choose On My iPhone, then DSH-Mizar.")
+            }
+        }
+        .confirmationDialog(
+            Text("Clear local sessions"),
+            isPresented: $confirmingLocalClear,
+            titleVisibility: .visible,
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await clearLocalData() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Sessions written by the on-device agent are kept on this phone. Clearing removes them; the workspace folders and the model configuration are kept.")
+        }
+    }
+
+    /// Clear the agent's sessions, keeping its configuration and the files.
+    private func clearLocalData() async {
+        if model.isLocalAgentMode {
+            // Leaving the mode drops the connection this screen was reading
+            // through; opening the last computer instead of sitting on a
+            // screen with nothing behind it is the state the operator was in
+            // before they picked the agent.
+            await model.leaveLocalAgent()
+            if let last = model.hosts.last { await model.open(hostId: last.hostId) }
+        }
+        try? model.localAgent.clearData()
+        localAgentBytes = model.localAgent.storedByteCount
+        model.localAgent.refreshKeyPresence()
+        mizarSuccess.toggle()
+    }
+
     private var transferSection: some View {
         Section {
             Toggle(isOn: Binding(

@@ -383,7 +383,7 @@ private struct SubagentRow: View {
     @ViewBuilder private var node: some View {
         switch snapshot?.status {
         case .running:
-            TwinStar(size: 13)
+            MizarStar(ink: 17, motion: .running)
                 .padding(.top, 12)
         case .done:
             Circle()

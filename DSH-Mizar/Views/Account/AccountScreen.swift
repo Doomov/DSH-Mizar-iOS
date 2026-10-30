@@ -128,7 +128,7 @@ struct AccountAvatarView: View {
             }
             Text(user.displayInitials)
                 .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAccent)
         }
     }
 
@@ -324,7 +324,7 @@ struct AccountScreen: View {
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.onAccent)
                             .padding(5)
                             .background(Circle().fill(Color.accentColor))
                             .overlay(Circle().strokeBorder(.white, lineWidth: 2))

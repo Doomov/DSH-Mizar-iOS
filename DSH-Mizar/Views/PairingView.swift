@@ -40,8 +40,7 @@ struct PairingView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                MizarMarkSearching()
-                    .frame(width: 56)
+                MizarStar(motion: .running, size: 56)
                     .padding(.top, 22)
                     .padding(.bottom, 16)
 
@@ -67,6 +66,7 @@ struct PairingView: View {
                         } label: {
                             Label("Scan the code on your computer", systemImage: "qrcode.viewfinder")
                                 .font(.headline)
+                                .foregroundStyle(Theme.onAccent)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 4)
                         }
@@ -204,6 +204,7 @@ struct PairingView: View {
                     if pairing { ProgressView() }
                 }
                 .font(.headline)
+                .foregroundStyle(Theme.onAccent)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)

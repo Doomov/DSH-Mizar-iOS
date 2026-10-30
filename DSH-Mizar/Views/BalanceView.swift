@@ -145,6 +145,7 @@ struct BalanceView: View {
                 openURL(DeepSeekBalance.topUpURL)
             } label: {
                 Label("balance.top-up", systemImage: "arrow.up.right.square")
+                    .foregroundStyle(Theme.onAccent)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)

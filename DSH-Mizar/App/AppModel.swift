@@ -1084,6 +1084,28 @@ final class AppModel {
     /// How many round trips are kept for the connection window's trace.
     static let latencyHistory = 24
 
+    /// The last weeks of work, as the home page charts them, or `nil` until the
+    /// host has answered once.
+    ///
+    /// One read per opening and per refresh rather than a live subscription:
+    /// this is a picture of the past, and a picture that redraws itself while
+    /// somebody is looking at it is a picture they cannot finish reading.
+    private(set) var usageOverview: UsageOverview?
+    /// Whether that read is on the socket.
+    private(set) var usageLoading = false
+
+    /// Read the host's usage history for the home page.
+    ///
+    /// Silent on failure: the chart keeps the last picture it had rather than
+    /// emptying itself because one read did not land, and the page is not the
+    /// place to report a link problem -- the connection window is.
+    func loadUsageOverview() async {
+        guard let connection, !usageLoading else { return }
+        usageLoading = true
+        defer { usageLoading = false }
+        usageOverview = try? await connection.call("usage.overview", as: UsageOverview.self)
+    }
+
     /// Whether the poll that follows a running turn is up.
     var runningPollIsActive: Bool { runningPoll != nil }
     /// How often it asks.

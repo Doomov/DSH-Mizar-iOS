@@ -29,27 +29,57 @@ struct HomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 24)
+            Spacer(minLength: 16)
             greeting
-            Spacer(minLength: 24)
+            Spacer(minLength: 16)
+            // The month, two thirds of the page: the reason to open the app is
+            // the work, and the work is what this is.
+            UsageHeatmap(
+                days: model.usageOverview?.days ?? [],
+                loading: model.usageLoading,
+            )
+            .padding(.horizontal, 18)
+            .frame(maxHeight: .infinity)
             if model.workspaceChoices.isEmpty {
                 Text("Start a session on your computer, then refresh.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, 20)
+                    .padding(.top, 10)
             }
             composer
+            // The bottom third: the way back into the conversation that was
+            // last on screen, which is what "continue" usually means.
+            LastSessionButton(session: lastSession, title: lastSessionTitle) { id in
+                model.selectedSessionId = id
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity)
         .contentShape(.rect)
         .onTapGesture { focused = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { if workspace == nil { workspace = model.workspaceChoices.first?.path } }
+        .onAppear {
+            if workspace == nil { workspace = model.workspaceChoices.first?.path }
+            Task { await model.loadUsageOverview() }
+        }
         .onChange(of: model.workspaceChoices.map(\.path)) { _, paths in
             if workspace == nil || !paths.contains(workspace ?? "") { workspace = paths.first }
         }
         .mizarFeedback(.impact(weight: .light), trigger: sends)
+    }
+
+    /// The conversation the operator was last in, as the home page's door.
+    private var lastSession: SessionRow? {
+        model.sessions
+            .filter { !$0.blank }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
+    private var lastSessionTitle: String? {
+        lastSession.flatMap { model.titles[$0.sessionId] }
     }
 
     private var greeting: some View {

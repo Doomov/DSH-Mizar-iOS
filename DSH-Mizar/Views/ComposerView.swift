@@ -168,6 +168,19 @@ struct ComposerView: View {
                         showingPhotoPicker: $showingPhotoPicker,
                         showingFileImporter: $showingFileImporter,
                         onLockedAttachment: { showingPaywall = true },
+                        onCompact: {
+                            // Sent as the operator's next prompt: the host's own
+                            // command, so the agent decides what to keep and the
+                            // phone does not get a second opinion about the
+                            // history.
+                            Task {
+                                _ = await model.sendPrompt(
+                                    "/compact",
+                                    to: sessionId,
+                                    mode: .queue,
+                                )
+                            }
+                        },
                     )
                     Spacer(minLength: 4)
                     // Put the keyboard away. Only there while the keyboard is up:

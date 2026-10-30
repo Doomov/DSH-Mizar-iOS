@@ -633,7 +633,44 @@ private struct ConversationRow: View {
             SystemNote(text: text)
         case .failure(_, let message, let at):
             FailureCard(message: message, at: at)
+        case .notice(_, let text, _):
+            ConversationNotice(text: text)
         }
+    }
+}
+
+/// The conversation talking about itself, centred in the stream.
+///
+/// A compaction is the one event in a session that changes what the operator is
+/// looking at without anybody having said anything: the history above it is now
+/// a summary. It is drawn as a line between the messages rather than as a card,
+/// because it is not part of the conversation -- it is a note about it, and the
+/// desktop draws it the same way.
+private struct ConversationNotice: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(.quaternary)
+                .frame(height: 1)
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(text)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            Rectangle()
+                .fill(.quaternary)
+                .frame(height: 1)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("conversation.notice")
     }
 }
 

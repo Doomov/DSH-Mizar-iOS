@@ -172,6 +172,12 @@ extension ConversationItem: Codable {
                 message: try container.decode(String.self, forKey: .message),
                 at: at,
             )
+        case "notice":
+            self = .notice(
+                id: id,
+                text: try container.decode(String.self, forKey: .text),
+                at: at,
+            )
         default:
             self = .message(
                 id: id,
@@ -199,6 +205,11 @@ extension ConversationItem: Codable {
             try container.encode(id, forKey: .id)
             try container.encode("failure", forKey: .kind)
             try container.encode(message, forKey: .message)
+            try container.encode(at, forKey: .at)
+        case .notice(let id, let text, let at):
+            try container.encode(id, forKey: .id)
+            try container.encode("notice", forKey: .kind)
+            try container.encode(text, forKey: .text)
             try container.encode(at, forKey: .at)
         }
     }

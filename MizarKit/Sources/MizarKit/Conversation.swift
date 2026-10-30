@@ -133,6 +133,12 @@ public enum ConversationItem: Sendable, Equatable, Identifiable {
     case message(id: String, role: Role, text: String, at: Date)
     /// A turn that ended without producing a response.
     case failure(id: String, message: String, at: Date)
+    /// The conversation talking about itself: a compaction, a summary that
+    /// replaced older turns.
+    ///
+    /// Not a message from either side, so it is not drawn as one -- a centred
+    /// line in the stream, the way the desktop draws it.
+    case notice(id: String, text: String, at: Date)
 
     /// Who a message came from.
     public enum Role: Sendable, Equatable {
@@ -145,6 +151,7 @@ public enum ConversationItem: Sendable, Equatable, Identifiable {
         switch self {
         case .message(let id, _, _, _): id
         case .failure(let id, _, _): id
+        case .notice(let id, _, _): id
         }
     }
 
@@ -187,6 +194,7 @@ public enum ConversationItem: Sendable, Equatable, Identifiable {
         switch self {
         case .message(_, _, _, let at): at
         case .failure(_, _, let at): at
+        case .notice(_, _, let at): at
         }
     }
 }
@@ -298,6 +306,16 @@ extension SessionRecord {
             guard Self.isUserAuthored(event) else { return [] }
             guard let text = Self.messageText(in: event) else { return [] }
             return [.message(id: id, role: .user, text: text, at: at)]
+
+        case "notice":
+            // The host's own line about the conversation: a compaction, a
+            // summary that replaced older turns. It is text it wrote, not a
+            // message from anyone, so it keeps its own item rather than
+            // borrowing a role it does not have.
+            let text = payload["data"]?["text"]?.stringValue
+                ?? Self.messageText(in: event)
+            guard let text, !text.isEmpty else { return [] }
+            return [.notice(id: id, text: text, at: at)]
 
         case "system/message":
             // Dropped. This is not a message between anyone -- it is the prompt
@@ -1181,6 +1199,16 @@ extension SessionMessagesResult {
                         [.failure(id: record.recordId, message: detail ?? kind, at: at ?? .distantPast)],
                         for: turn, as: true,
                     )
+                }
+            case "notice":
+                let items = record.conversationItems()
+                guard !items.isEmpty else { continue }
+                if let turn, order.contains(turn) {
+                    place(items, for: turn, as: true)
+                } else if openIsSet {
+                    place(items, for: open, as: true)
+                } else {
+                    pending.append(contentsOf: items)
                 }
             case "user/message", "assistant/message":
                 let items = record.conversationItems()

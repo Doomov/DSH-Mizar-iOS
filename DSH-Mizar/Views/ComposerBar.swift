@@ -56,6 +56,8 @@ struct ComposerBar: View {
     /// is tapped: the account screen, where the plan can be bought. Not a silent
     /// no-op -- a locked button that does nothing is a bug report.
     var onLockedAttachment: () -> Void = {}
+    /// Ask the session to compact its history. Sent as DSH's own command.
+    var onCompact: () -> Void = {}
 
     /// DSH's own commands. The slash forms are what the host parses; the titles
     /// are what the operator is choosing between. They are catalogue keys
@@ -134,7 +136,14 @@ struct ComposerBar: View {
         .fixedSize()
         .disabled(stats?.context == nil)
         .mizarPopover(isPresented: $showingContext, arrowEdge: .bottom) {
-            ContextDetail(stats: stats)
+            ContextDetail(stats: stats) {
+                // The one action the figure is for. DSH's own slash command
+                // rather than a second protocol: compacting is something the
+                // agent decides how to do, and a phone that reimplemented it
+                // would be a second opinion about the operator's history.
+                showingContext = false
+                onCompact()
+            }
         }
         .accessibilityLabel("Context, \(contextLabel)")
         .accessibilityIdentifier("composer.context")
@@ -397,6 +406,8 @@ private struct Breathing: ViewModifier {
 /// What the context figure is made of.
 private struct ContextDetail: View {
     let stats: SessionStatsFrame?
+    /// Asked to compact the conversation.
+    var onCompact: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -427,6 +438,21 @@ private struct ContextDetail: View {
                     row(String(localized: "Tools"), breakdown.toolsTokens.formatted(.number.grouping(.automatic)))
                     row(String(localized: "Messages"), breakdown.messageTokens.formatted(.number.grouping(.automatic)))
                 }
+                Divider()
+                Button {
+                    onCompact()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        Text("Compact the conversation")
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.regular)
+                .foregroundStyle(Theme.onAccent)
+                .accessibilityIdentifier("context.compact")
             } else {
                 Text("No context figure yet.")
                     .font(.caption)

@@ -668,6 +668,10 @@ class AppFlowTestBase: XCTestCase {
         arguments += ["-mizarSkipLoginGate"]
         // Credits come from GitHub; the suite asserts rows, not the network.
         arguments += ["-mizarCreditsFixture"]
+        // No splash: the suite looks for its first control within a few seconds
+        // of launching, and the splash covers the screen until the first read
+        // lands. The operator sees it; the tests do not.
+        arguments += ["-mizarSkipSplash"]
         return arguments
     }
 

@@ -39,6 +39,16 @@ struct SplashView: View {
     /// How long the wait for the app is allowed to last.
     private static let patience = Duration.seconds(6)
 
+    /// Whether a launch asked for no splash at all.
+    ///
+    /// The UI suite launches the app dozens of times and looks for the first
+    /// control within a few seconds; a splash that covers the screen while the
+    /// first read is in flight is a splash those tests race. The app the
+    /// operator opens has it; the app the tests drive does not.
+    private static var skipped: Bool {
+        ProcessInfo.processInfo.arguments.contains("-mizarSkipSplash")
+    }
+
     var body: some View {
         ZStack {
             Theme.paneBackground
@@ -51,6 +61,10 @@ struct SplashView: View {
                 .opacity(leaving ? 0 : 1)
         }
         .task {
+            if Self.skipped {
+                onFinished()
+                return
+            }
             // Wait for the app to have something to show. The phases that mean
             // "still finding out" are the launching ones; anything else is an
             // answer, even if the answer is that there is no computer.

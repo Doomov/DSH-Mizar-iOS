@@ -42,7 +42,16 @@ import { OpenAICompatEngine } from './engine/openai-compat.ts'
 import { TurnRunner } from './core/turn-runner.ts'
 import { buildMethodTable, type MethodContext } from './core/methods.ts'
 
-const CONFIG_FILE = 'config.json'
+/**
+ * Where the kernel keeps its own bookkeeping, relative to the root.
+ *
+ * The root itself holds the operator's workspaces -- the folders they see in
+ * the Files app -- so `sessions/` and `config.json` live one level down, in a
+ * dot-directory the file browser leaves alone.
+ */
+const DATA_ROOT = '.mizar'
+
+const CONFIG_FILE = `${DATA_ROOT}/config.json`
 
 /** A client connection to the kernel: text frames in, text frames out. */
 export interface KernelConnection {
@@ -118,8 +127,11 @@ export class KernelImpl {
     this.#hostId = await this.#kvEnsure('kernel.hostId')
     this.#deviceId = await this.#kvEnsure('kernel.deviceId')
 
-    this.#store = new SessionStore(this.#host, `${this.#host.home}/workspace`)
+    await this.#makeDir(DATA_ROOT)
+    const workspace = await this.#ensureWorkspace()
+    this.#store = new SessionStore(this.#host, DATA_ROOT, `${this.#host.home}/${workspace}`)
     await this.#store.load()
+    await this.#adoptSessionsOutsideWorkspaces()
 
     this.#broker = new InteractionsBroker((event, data) => this.#emit(event, data))
     const engine = this.#engineOverride ?? new OpenAICompatEngine(this.#host, () => this.#config)
@@ -129,9 +141,105 @@ export class KernelImpl {
       engine,
       broker: this.#broker,
       config: () => this.#config,
+      defaultWorkspace: workspace,
     })
 
     this.#host.log('info', `kernel booted: ${this.#hostId}, ${this.#store.list().length} sessions`)
+  }
+
+  // -- Workspaces ----------------------------------------------------------
+
+  /**
+   * The folders under the root that are workspaces.
+   *
+   * A workspace is a directory the operator can see: one folder per project,
+   * directly under the root, which is what makes "create a workspace" mean
+   * "create a folder" and what lets the Files app show the agent's files
+   * without an export step. The kernel's own data directory and any dot-entry
+   * are not workspaces.
+   */
+  async #workspaceNames(): Promise<string[]> {
+    const entries = await fromCallback<string[] | null>((cb) => this.#host.fs.listDir('.', cb))
+    const names: string[] = []
+    for (const entry of entries ?? []) {
+      if (entry === DATA_ROOT || entry.startsWith('.')) continue
+      const directory = await fromCallback<boolean>((cb) => this.#host.fs.isDirectory(entry, cb))
+      if (directory) names.push(entry)
+    }
+    return names.sort()
+  }
+
+  /** The first workspace, created when the root has none. */
+  async #ensureWorkspace(): Promise<string> {
+    const names = await this.#workspaceNames()
+    if (names.length > 0) {
+      const preferred = this.#host.defaultWorkspaceName
+      const first = names[0] ?? preferred
+      return names.includes(preferred) ? preferred : first
+    }
+    const name = this.#host.defaultWorkspaceName
+    await this.#makeDir(name)
+    this.#host.log('info', `created the default workspace: ${name}`)
+    return name
+  }
+
+  /**
+   * Give every session a workspace that exists.
+   *
+   * A kernel from before the root moved recorded `workspace/` -- a directory
+   * under the old root -- as its sessions' cwd. Those paths are outside this
+   * root now, and a tool pointed at one would be pointed at nothing. The
+   * sessions keep their history and land in the default workspace.
+   */
+  async #adoptSessionsOutsideWorkspaces(): Promise<void> {
+    const paths = new Set((await this.#workspaceNames()).map((name) => `${this.#host.home}/${name}`))
+    if (paths.size === 0) return
+    const fallback = [...paths].sort()[0] ?? `${this.#host.home}/${this.#host.defaultWorkspaceName}`
+    for (const row of this.#store.list()) {
+      if (paths.has(row.cwd)) continue
+      await this.#store.repointCwd(row.sessionId, fallback)
+      this.#host.log(
+        'info',
+        `sessions/${row.sessionId}: moved from ${row.cwd || 'no workspace'} to ${fallback}`,
+      )
+    }
+  }
+
+  /** Every workspace, newest listing first-child order, with its sessions. */
+  async workspaces(): Promise<
+    { name: string; path: string; sessionIds: string[] }[]
+  > {
+    const sessions = this.#store.list()
+    const names = await this.#workspaceNames()
+    return names.map((name) => {
+      const path = `${this.#host.home}/${name}`
+      return {
+        name,
+        path,
+        sessionIds: sessions.filter((session) => session.cwd === path).map((session) => session.sessionId),
+      }
+    })
+  }
+
+  /**
+   * Make one workspace folder.
+   *
+   * The name is validated by the caller (`workspace.create`), because a bad
+   * name is a malformed frame rather than a kernel failure.
+   */
+  async createWorkspace(name: string): Promise<{ name: string; path: string; sessionIds: string[] }> {
+    const names = await this.#workspaceNames()
+    if (names.includes(name)) {
+      throw new MethodError('REMOTE_ERROR', `workspace.create: "${name}" already exists`)
+    }
+    await this.#makeDir(name)
+    const path = `${this.#host.home}/${name}`
+    this.#host.log('info', `workspace created: ${name}`)
+    return { name, path, sessionIds: [] }
+  }
+
+  async #makeDir(path: string): Promise<void> {
+    await fromCallback<void>((cb) => this.#host.fs.makeDir(path, cb))
   }
 
   async #kvEnsure(key: string): Promise<string> {

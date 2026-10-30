@@ -5,8 +5,12 @@
  * kernel *is* the engine, so it keeps the sessions itself. One directory per
  * session under the kernel root:
  *
- *     sessions/<sessionId>/meta.json     — identity, title, model, preset, cursors
- *     sessions/<sessionId>/log.jsonl     — the record log, one JSON record per line
+ *     <data>/sessions/<sessionId>/meta.json     — identity, title, model, preset, cursors
+ *     <data>/sessions/<sessionId>/log.jsonl     — the record log, one JSON record per line
+ *
+ * `<data>` is the kernel's private directory (`.mizar` in the app's root). The
+ * root itself belongs to the operator: it holds the workspace folders they see
+ * in the Files app, and session bookkeeping must not clutter it.
  *
  * The log is the write-ahead truth: every record is appended to it before the
  * reader sees it. The store holds the parsed records in memory (phone-scale
@@ -78,7 +82,7 @@ export interface SessionMeta {
 
 /** One loaded session: meta plus its in-memory log. */
 interface LoadedSession {
-  readonly meta: SessionMeta
+  meta: SessionMeta
   readonly records: SessionRecord[]
 }
 
@@ -86,10 +90,6 @@ interface LoadedSession {
 interface StoredMeta extends SessionMeta {}
 
 const SESSIONS_DIR = 'sessions'
-
-function sessionDir(sessionId: string): string {
-  return `${SESSIONS_DIR}/${sessionId}`
-}
 
 function isSafeSessionId(sessionId: string): boolean {
   return /^session-[0-9a-f-]{1,80}$/.test(sessionId) || /^[A-Za-z0-9_-]{1,80}$/.test(sessionId)
@@ -100,20 +100,33 @@ export class SessionStore {
   readonly #sessions = new Map<string, LoadedSession>()
   /** The default working directory new sessions get. */
   readonly defaultCwd: string
+  /** The kernel's private directory, relative to the root; `''` for the root itself. */
+  readonly #dataRoot: string
 
-  constructor(host: PlatformHost, defaultCwd: string) {
+  constructor(host: PlatformHost, dataRoot: string, defaultCwd: string) {
     this.#host = host
+    this.#dataRoot = dataRoot
     this.defaultCwd = defaultCwd
+  }
+
+  /** `<data>/sessions/<id>`, kernel-relative. */
+  #sessionDir(sessionId: string): string {
+    return `${this.#sessionsDir()}/${sessionId}`
+  }
+
+  /** `<data>/sessions`, kernel-relative. */
+  #sessionsDir(): string {
+    return this.#dataRoot === '' ? SESSIONS_DIR : `${this.#dataRoot}/${SESSIONS_DIR}`
   }
 
   /** Load every session's meta and log from disk. Called once at boot. */
   async load(): Promise<void> {
-    const entries = await fromCallback<string[] | null>((cb) => this.#host.fs.listDir(SESSIONS_DIR, cb))
+    const entries = await fromCallback<string[] | null>((cb) => this.#host.fs.listDir(this.#sessionsDir(), cb))
     if (entries === null) return
     for (const name of [...entries].sort()) {
       if (!isSafeSessionId(name)) continue
       const metaText = await fromCallback<string | null>((cb) =>
-        this.#host.fs.readText(`${sessionDir(name)}/meta.json`, cb),
+        this.#host.fs.readText(`${this.#sessionDir(name)}/meta.json`, cb),
       )
       if (metaText === null) continue
       let meta: StoredMeta
@@ -150,7 +163,7 @@ export class SessionStore {
 
   async #loadLog(sessionId: string): Promise<SessionRecord[]> {
     const text = await fromCallback<string | null>((cb) =>
-      this.#host.fs.readText(`${sessionDir(sessionId)}/log.jsonl`, cb),
+      this.#host.fs.readText(`${this.#sessionDir(sessionId)}/log.jsonl`, cb),
     )
     const records: SessionRecord[] = []
     if (text === null || text === '') return records
@@ -233,13 +246,26 @@ export class SessionStore {
       llmMs: 0,
       toolMs: 0,
     }
-    await fromCallback<void>((cb) => this.#host.fs.makeDir(sessionDir(sessionId), cb))
-    // The session workspace exists from birth: a tool that lists it on the
-    // first step sees an empty directory, not a missing one.
-    await fromCallback<void>((cb) => this.#host.fs.makeDir(`workspace/${sessionId}`, cb))
+    await fromCallback<void>((cb) => this.#host.fs.makeDir(this.#sessionDir(sessionId), cb))
     await this.#persistMeta(sessionId, meta)
     this.#sessions.set(sessionId, { meta, records: [] })
     return meta
+  }
+
+  /**
+   * Point a session at a different working directory.
+   *
+   * The upgrade path only: a kernel whose root moved -- the app's local agent
+   * began keeping its workspaces where the Files app can see them -- finds
+   * sessions whose recorded directory is outside the new root. They are given
+   * the default workspace rather than a folder the file tools cannot enter,
+   * and the new path is persisted so the next boot agrees.
+   */
+  async repointCwd(sessionId: string, cwd: string): Promise<void> {
+    const session = this.#sessions.get(sessionId)
+    if (session === undefined || session.meta.cwd === cwd) return
+    session.meta = { ...session.meta, cwd }
+    await this.#persistMeta(sessionId, session.meta)
   }
 
   get(sessionId: string): SessionMeta | null {
@@ -273,7 +299,7 @@ export class SessionStore {
 
   async #persistRecord(sessionId: string, record: SessionRecord): Promise<void> {
     await fromCallback<void>((cb) =>
-      this.#host.fs.appendText(`${sessionDir(sessionId)}/log.jsonl`, `${JSON.stringify(record)}\n`, cb),
+      this.#host.fs.appendText(`${this.#sessionDir(sessionId)}/log.jsonl`, `${JSON.stringify(record)}\n`, cb),
     )
     const session = this.#sessions.get(sessionId)
     if (session !== undefined) await this.#persistMeta(sessionId, session.meta)
@@ -281,7 +307,7 @@ export class SessionStore {
 
   async #persistMeta(sessionId: string, meta: SessionMeta): Promise<void> {
     await fromCallback<void>((cb) =>
-      this.#host.fs.writeText(`${sessionDir(sessionId)}/meta.json`, JSON.stringify(meta, null, 2), cb),
+      this.#host.fs.writeText(`${this.#sessionDir(sessionId)}/meta.json`, JSON.stringify(meta, null, 2), cb),
     )
   }
 

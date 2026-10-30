@@ -248,6 +248,11 @@ public final class KernelRuntime: @unchecked Sendable {
     public let home: String
     /// The kernel's display name.
     public let hostName: String
+    /// What the first workspace is called, when the root has none.
+    ///
+    /// A string rather than a constant inside the kernel so the folder the
+    /// operator sees in the Files app is named in their language.
+    public let defaultWorkspaceName: String
 
     private let queue: DispatchQueue
     // Only ever touched on `queue`.
@@ -271,6 +276,7 @@ public final class KernelRuntime: @unchecked Sendable {
     public init(
         rootURL: URL,
         hostName: String,
+        defaultWorkspaceName: String = "Default workspace",
         kv: any KernelKeyValueStore = KeychainKernelKeyValueStore(),
         httpHandler: any KernelHTTPHandler = URLSessionKernelHTTPHandler(),
     ) {
@@ -279,6 +285,7 @@ public final class KernelRuntime: @unchecked Sendable {
         self.home = root.path
         self.rootPathComponents = root.path.split(separator: "/").map(String.init)
         self.hostName = hostName
+        self.defaultWorkspaceName = defaultWorkspaceName
         self.kv = kv
         self.httpHandler = httpHandler
         self.queue = DispatchQueue(label: "com.shirazu.mizar.kernel.js")
@@ -425,6 +432,10 @@ public final class KernelRuntime: @unchecked Sendable {
         // The identity strings the welcome frame and `host.info` carry.
         host.setObject(JSValue(object: hostName, in: context), forKeyedSubscript: "hostName" as NSString)
         host.setObject(JSValue(object: home, in: context), forKeyedSubscript: "home" as NSString)
+        host.setObject(
+            JSValue(object: defaultWorkspaceName, in: context),
+            forKeyedSubscript: "defaultWorkspaceName" as NSString,
+        )
         host.setObject(JSValue(object: "jsc", in: context), forKeyedSubscript: "platformVersion" as NSString)
 
         // Every function the kernel calls is an ObjC block: plain Swift
@@ -500,6 +511,15 @@ public final class KernelRuntime: @unchecked Sendable {
             }
         }
         set(fs, "listDir", JSValue(object: listDir, in: context))
+
+        let isDirectory: @convention(block) (String, JSValue) -> Void = { [weak self] path, cb in
+            guard let self else { return }
+            let cbBox = JSBox(cb)
+            self.isDirectoryOffQueue(path) { answer in
+                cbBox.value.invokeMethod("ok", withArguments: [JSValue(bool: answer, in: self.context)])
+            }
+        }
+        set(fs, "isDirectory", JSValue(object: isDirectory, in: context))
 
         let makeDir: @convention(block) (String, JSValue) -> Void = { [weak self] path, cb in
             guard let self else { return }
@@ -709,6 +729,21 @@ public final class KernelRuntime: @unchecked Sendable {
                 entries = nil
             }
             self?.performOnKernelQueue { _ in deliver(entries) }
+        }
+    }
+
+    /// Whether a path names a directory, asked off the kernel queue.
+    private func isDirectoryOffQueue(_ path: String, deliver: @escaping @Sendable (Bool) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let answer: Bool
+            if let self, let url = self.resolve(path: path) {
+                var isDirectory: ObjCBool = false
+                answer = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                    && isDirectory.boolValue
+            } else {
+                answer = false
+            }
+            self?.performOnKernelQueue { _ in deliver(answer) }
         }
     }
 

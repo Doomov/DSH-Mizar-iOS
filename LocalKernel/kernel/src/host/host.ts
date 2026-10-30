@@ -65,6 +65,14 @@ export interface PlatformHost {
   readonly hostName: string
   /** The kernel home directory, for display in the welcome frame. */
   readonly home: string
+  /**
+   * The folder created in `home` when it holds no workspace yet.
+   *
+   * A name rather than a constant so the first workspace can be called what the
+   * platform's language calls it ("默认工作区" on a Chinese phone); every other
+   * workspace is named by the operator.
+   */
+  readonly defaultWorkspaceName: string
   /** The kernel's own version string, for logs and `kernel.status`. */
   readonly platformVersion: string
 
@@ -79,6 +87,15 @@ export interface PlatformHost {
     deletePath(path: string, cb: Callback<void>): void
     /** List a directory's entry names; `null` when it does not exist. */
     listDir(path: string, cb: Callback<string[] | null>): void
+    /**
+     * Whether a path names a directory.
+     *
+     * `listDir` answers names, and a workspace is a directory; telling a folder
+     * from a file without a second question would mean trusting every entry's
+     * name. `false` for anything that is not a directory, including missing
+     * paths.
+     */
+    isDirectory(path: string, cb: Callback<boolean>): void
     /** Create a directory and every missing parent. */
     makeDir(path: string, cb: Callback<void>): void
   }

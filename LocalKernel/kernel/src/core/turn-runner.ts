@@ -27,7 +27,7 @@
  * turn as `stopped` at the next boot.
  */
 
-import type { PlatformHost } from '../host/host.ts'
+import { fromCallback, type PlatformHost } from '../host/host.ts'
 import type { EngineAdapter, EngineMessage, EngineToolCall, TurnSignal } from '../engine/types.ts'
 import type { InteractionsBroker } from './interactions.ts'
 import type { SessionStore } from './session-store.ts'
@@ -65,6 +65,7 @@ export class TurnRunner {
   readonly #engine: EngineAdapter
   readonly #broker: InteractionsBroker
   readonly #config: () => KernelConfig
+  readonly #defaultWorkspace: string
   readonly #running = new Map<string, RunningTurn>()
 
   constructor(input: {
@@ -73,12 +74,43 @@ export class TurnRunner {
     engine: EngineAdapter
     broker: InteractionsBroker
     config: () => KernelConfig
+    /** The workspace name a session falls back to when its recorded one is unusable. */
+    defaultWorkspace: string
   }) {
     this.#host = input.host
     this.#store = input.store
     this.#engine = input.engine
     this.#broker = input.broker
     this.#config = input.config
+    this.#defaultWorkspace = input.defaultWorkspace
+  }
+
+  /**
+   * The folder a session works in, relative to the kernel root.
+   *
+   * A workspace is a folder under the root, and a session's `cwd` is that
+   * folder's absolute display path. The file tools take relative paths, so this
+   * is the one place the two forms meet; a session whose recorded directory is
+   * somehow outside the root falls back to the default workspace rather than
+   * pointing the tools at the root itself.
+   */
+  /**
+   * Make sure the session's workspace folder exists before a turn touches it.
+   *
+   * The folder belongs to the operator -- they can rename or delete it from the
+   * Files app -- so the kernel checks rather than assumes. Cheap: one `mkdir`
+   * per turn.
+   */
+  async #ensureWorkspace(sessionId: string): Promise<void> {
+    const path = this.#workspaceOf(sessionId)
+    await fromCallback<void>((cb) => this.#host.fs.makeDir(path, cb))
+  }
+
+  #workspaceOf(sessionId: string): string {
+    const cwd = this.#store.get(sessionId)?.cwd ?? ''
+    const prefix = `${this.#host.home}/`
+    if (cwd.startsWith(prefix) && cwd.length > prefix.length) return cwd.slice(prefix.length)
+    return this.#defaultWorkspace
   }
 
   /** Whether a turn is running for the session. */
@@ -128,6 +160,7 @@ export class TurnRunner {
     const running: RunningTurn = { turn, signal, cancel }
     this.#running.set(sessionId, running)
     await this.#store.beginTurn(sessionId, turn)
+    await this.#ensureWorkspace(sessionId)
 
     try {
       await this.#store.append(sessionId, 'turn/start', { turn })
@@ -458,8 +491,8 @@ export class TurnRunner {
     return {
       host: this.#host,
       sessionId,
-      workspacePath: `workspace/${sessionId}`,
-      workspaceDisplay: `${this.#host.home}/workspace/${sessionId}`,
+      workspacePath: this.#workspaceOf(sessionId),
+      workspaceDisplay: `${this.#host.home}/${this.#workspaceOf(sessionId)}`,
       preset: meta?.permissionPreset ?? config.defaultPreset,
       broker: this.#broker,
       signal,

@@ -26,11 +26,11 @@ async function makeFixture(engine: EngineAdapter): Promise<Fixture> {
   const path = await import('node:path')
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mizar-turn-'))
   const host = new NodeHost(root)
-  const store = new SessionStore(host, `${host.home}/workspace`)
+  const store = new SessionStore(host, '.mizar', `${host.home}/Default workspace`)
   await store.load()
   const events: { event: string; data: unknown }[] = []
   const broker = new InteractionsBroker((event, data) => events.push({ event, data }))
-  const runner = new TurnRunner({ host, store, engine, broker, config: () => DEFAULT_CONFIG })
+  const runner = new TurnRunner({ host, store, engine, broker, config: () => DEFAULT_CONFIG, defaultWorkspace: 'Default workspace' })
   const session = await store.create({})
   return { runner, store, broker, events, sessionId: session.sessionId, host }
 }
@@ -168,7 +168,7 @@ describe('TurnRunner', () => {
     expect((result?.data as { output?: string }).output).toContain('wrote')
     // The file landed in the session workspace.
     const written = await new Promise<string | null>((resolve) =>
-      fixture.host.fs.readText(`workspace/${fixture.sessionId}/notes.md`, { ok: resolve, fail: () => resolve(null) }),
+      fixture.host.fs.readText(`Default workspace/notes.md`, { ok: resolve, fail: () => resolve(null) }),
     )
     expect(written).toBe('hello')
   })
@@ -204,7 +204,7 @@ describe('TurnRunner', () => {
     })
     // Nothing was written.
     const written = await new Promise<string | null>((resolve) =>
-      fixture.host.fs.readText(`workspace/${fixture.sessionId}/x.md`, { ok: resolve, fail: () => resolve(null) }),
+      fixture.host.fs.readText(`Default workspace/x.md`, { ok: resolve, fail: () => resolve(null) }),
     )
     expect(written).toBeNull()
   })

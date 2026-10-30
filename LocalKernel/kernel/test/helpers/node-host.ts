@@ -5,7 +5,7 @@
  * allowed.
  */
 
-import { mkdir, readFile, writeFile, appendFile, rm, readdir } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, appendFile, rm, readdir, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import type { Callback, PlatformHost, HostHttpRequest } from '../../src/host/host.ts'
@@ -13,6 +13,7 @@ import type { Callback, PlatformHost, HostHttpRequest } from '../../src/host/hos
 export class NodeHost implements PlatformHost {
   readonly hostName: string
   readonly home: string
+  readonly defaultWorkspaceName = 'Default workspace'
   readonly platformVersion = `node-${process.version}`
   readonly root: string
 
@@ -83,6 +84,14 @@ export class NodeHost implements PlatformHost {
       } catch (error) {
         if (isNotFound(error)) cb.ok(null)
         else cb.fail({ message: String(error) })
+      }
+    },
+    isDirectory: async (path: string, cb: Callback<boolean>): Promise<void> => {
+      try {
+        const stats = await stat(this.#resolve(path))
+        cb.ok(stats.isDirectory())
+      } catch {
+        cb.ok(false)
       }
     },
     makeDir: async (path: string, cb: Callback<void>): Promise<void> => {

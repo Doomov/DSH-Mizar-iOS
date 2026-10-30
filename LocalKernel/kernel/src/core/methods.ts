@@ -133,18 +133,46 @@ export function buildMethodTable(): Record<string, Handler> {
     },
 
     'workspace.list': async (_payload, ctx) => {
-      const identity = ctx.kernel.identity()
-      const sessions = ctx.kernel.store.list()
+      // One row per folder under the root. The client groups sessions by
+      // `cwd`, so the path here and a session's `cwd` have to be the same
+      // string -- both are absolute display paths under `home`.
+      const workspaces = await ctx.kernel.workspaces()
       return {
-        items: [
-          {
-            workspaceId: 'kernel',
-            name: 'Local workspace',
-            path: `${identity.home}/workspace`,
-            sessionIds: sessions.map((session) => session.sessionId),
-          },
-        ],
+        items: workspaces.map((workspace) => ({
+          workspaceId: workspace.name,
+          // `title`, not `name`: the client's row decodes the desktop host's
+          // field, and a row without one falls back to drawing the raw path.
+          title: workspace.name,
+          path: workspace.path,
+          sessionIds: workspace.sessionIds,
+        })),
         complete: true,
+      }
+    },
+
+    'workspace.create': async (payload, ctx) => {
+      const fields = payloadObject(payload, 'workspace.create')
+      const name = stringField(fields, 'workspace.create', 'name').trim()
+      if (
+        name === ''
+        || name.length > 64
+        || name.startsWith('.')
+        || name.includes('/')
+        || name.includes('\\')
+        || /[\u0000-\u001f]/.test(name)
+      ) {
+        throw malformed(
+          'workspace.create: payload."name" must be a folder name of 1-64 characters, without slashes and not starting with a dot',
+        )
+      }
+      const workspace = await ctx.kernel.createWorkspace(name)
+      return {
+        workspace: {
+          workspaceId: workspace.name,
+          title: workspace.name,
+          path: workspace.path,
+          sessionIds: [],
+        },
       }
     },
 
@@ -307,19 +335,26 @@ export function buildMethodTable(): Record<string, Handler> {
       const cwd = optionalString(fields, 'session.create', 'cwd')
       const sessionId = optionalString(fields, 'session.create', 'sessionId')
       const agentPreset = optionalString(fields, 'session.create', 'agentPreset')
+      // A workspace is one of the folders the operator can see under the root;
+      // a session started without one takes the default. A foreign path would
+      // promise a directory the file tools cannot enter.
+      const workspaces = await ctx.kernel.workspaces()
+      let workspace = workspaces[0]
       if (cwd !== undefined) {
-        // The kernel manages its own sandboxes; a foreign cwd would promise a
-        // directory the file tools cannot touch.
-        const workspaceRoot = `${ctx.kernel.identity().home}/workspace`
-        if (!cwd.startsWith(workspaceRoot)) {
+        const named = workspaces.find((candidate) => candidate.path === cwd || candidate.name === cwd)
+        if (named === undefined) {
           throw methodError(
             'REMOTE_ERROR',
-            `session.create: the local kernel manages its own workspaces; omit "cwd" or pass the kernel workspace root (${workspaceRoot})`,
+            `session.create: no workspace at "${cwd}"; create it with workspace.create, or omit "cwd" for the default workspace`,
           )
         }
+        workspace = named
+      }
+      if (workspace === undefined) {
+        throw methodError('REMOTE_ERROR', 'session.create: the kernel has no workspace to start a session in')
       }
       const meta = await ctx.kernel.store.create({
-        ...(cwd !== undefined ? { cwd } : {}),
+        cwd: workspace.path,
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(agentPreset !== undefined ? { agentPreset } : {}),
       })

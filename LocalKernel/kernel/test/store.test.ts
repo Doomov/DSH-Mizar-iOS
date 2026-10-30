@@ -12,7 +12,7 @@ async function makeStore(): Promise<{ store: SessionStore; host: NodeHost; root:
   const path = await import('node:path')
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mizar-store-'))
   const host = new NodeHost(root)
-  const store = new SessionStore(host, `${host.home}/workspace`)
+  const store = new SessionStore(host, '.mizar', `${host.home}/Default workspace`)
   await store.load()
   return { store, host, root }
 }
@@ -36,7 +36,7 @@ describe('SessionStore', () => {
     await store.append(session.sessionId, 'turn/start', { turn: 1 })
     await store.append(session.sessionId, 'turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const reloaded = new SessionStore(host, `${host.home}/workspace`)
+    const reloaded = new SessionStore(host, '.mizar', `${host.home}/Default workspace`)
     await reloaded.load()
     const records = reloaded.records(session.sessionId)
     expect(records.map((record) => record.event.type)).toEqual(['turn/start', 'turn/end'])
@@ -60,7 +60,7 @@ describe('SessionStore', () => {
       }),
     )
 
-    const reloaded = new SessionStore(host, `${host.home}/workspace`)
+    const reloaded = new SessionStore(host, '.mizar', `${host.home}/Default workspace`)
     await reloaded.load()
     // The torn line is skipped, and the unterminated turn is closed by the
     // boot rule as a restart casualty.
@@ -78,7 +78,7 @@ describe('SessionStore', () => {
     await store.append(session.sessionId, 'turn/start', { turn })
     // No turn/end: a crash happened here.
 
-    const reloaded = new SessionStore(host, `${host.home}/workspace`)
+    const reloaded = new SessionStore(host, '.mizar', `${host.home}/Default workspace`)
     await reloaded.load()
     const records = reloaded.records(session.sessionId)
     const last = records[records.length - 1]

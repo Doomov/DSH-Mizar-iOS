@@ -46,10 +46,14 @@ public actor LocalKernelTransport: WebSocketTransport {
         await socket.send(text: text)
     }
 
-    public func receive() async throws -> String? {
+    public func receive() async throws -> WebSocketFrame? {
         guard opened, let socket else { return nil }
-        let frame = await socket.nextFrame()
-        return frame
+        guard let frame = await socket.nextFrame() else { return nil }
+        // The in-process kernel speaks the same two dialects as the network ones.
+        if let text = frame as? String {
+            return .text(text)
+        }
+        return .binary(frame as? Data ?? Data())
     }
 
     public func close() async {

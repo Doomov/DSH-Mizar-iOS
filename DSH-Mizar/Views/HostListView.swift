@@ -31,6 +31,87 @@ struct HostListView: View {
     /// this window: the camera it opens is as tall as the screen is wide, and
     /// only a sheet can grow for it. See ``PairingSheet``.
     @State private var pairing = false
+    /// The computer whose agent is being chosen, if any.
+    ///
+    /// Both kinds of row end here: a computer the account found, and one this
+    /// phone paired with by scanning a code. They differ in how the token is
+    /// minted, not in the question -- a computer runs three agents and a phone
+    /// that opens one has to say which.
+    @State private var choosingEngine: AgentChoice?
+    /// Which connection is being opened, so the sheet can show a spinner.
+    @State private var openingEngine: AgentEngine?
+
+    /// A computer waiting for its agent to be chosen.
+    private enum AgentChoice: Identifiable {
+        case account(AccountDesktop)
+        case paired(PairedHost)
+
+        var id: String {
+            switch self {
+            case .account(let desktop): return "account-\(desktop.deviceId)"
+            case .paired(let host): return "paired-\(host.hostId)"
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .account(let desktop): return desktop.name
+            case .paired(let host): return host.displayName
+            }
+        }
+
+        /// The agents to offer, when the computer has said which it serves.
+        var engines: [AgentEngine] {
+            switch self {
+            // The account's computers run this desktop, which serves all three.
+            case .account: return AgentEngine.allCases
+            case .paired(let host):
+                return host.engineChoices.compactMap(AgentEngine.init(rawValue:))
+            }
+        }
+
+        var current: AgentEngine? {
+            switch self {
+            case .account: return nil
+            case .paired(let host): return host.engine.flatMap(AgentEngine.init(rawValue:))
+            }
+        }
+    }
+
+    /// One row of the account's computers.
+    @ViewBuilder
+    private func accountRow(_ desktop: AccountDesktop) -> some View {
+        Button {
+            choosingEngine = .account(desktop)
+        } label: {
+            AccountDesktopRow(desktop: desktop)
+        }
+        .buttonStyle(.pressable(scale: 0.98))
+        .disabled(!desktop.online)
+        .accessibilityIdentifier("host.account.\(desktop.deviceId)")
+    }
+
+    /// Choose an agent on a computer and open it.
+    ///
+    /// The token the relay hands back is already scoped to this agent, so the
+    /// computer filters the list it sends: the phone never sees another agent's
+    /// sessions even for a moment.
+    private func connect(_ desktop: AccountDesktop, engine: AgentEngine) async {
+        openingEngine = engine
+        defer { openingEngine = nil }
+        do {
+            let connection = try await model.account.connect(to: desktop, engine: engine)
+            guard let origin = URL(string: RelayTier.paidBaseURL) else { return }
+            await model.openAccountDesktop(
+                desktop,
+                using: connection,
+                at: origin,
+                engine: engine,
+            )
+        } catch {
+            model.reportAccountFailure(error)
+        }
+    }
 
     enum HostRoute: Hashable {
         case rename(String)
@@ -40,15 +121,47 @@ struct HostListView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 6) {
+                    // The agent that lives on this phone, above the computers it
+                    // can reach: it is the one choice that needs no other device
+                    // to be awake.
+                    Button {
+                        Task { await model.enterLocalAgent() }
+                    } label: {
+                        LocalAgentRow(
+                            state: model.localAgent.state,
+                            configured: model.localAgent.hasConfiguredProvider,
+                            isOpen: model.isLocalAgentMode,
+                        )
+                    }
+                    .buttonStyle(.pressable(scale: 0.98))
+                    .disabled(model.localAgent.state == .starting)
+                    .accessibilityIdentifier("host.row.local")
+
                     ForEach(model.hosts, id: \.hostId) { host in
                         Button {
-                            Task { await model.open(hostId: host.hostId) }
+                            // A computer that serves three agents is asked which
+                            // one first. One that has never said (an older host,
+                            // or a pairing made before this existed) opens as it
+                            // always did, and the picker appears on the sidebar
+                            // once the host has answered.
+                            if host.engineChoices.count > 1 {
+                                choosingEngine = .paired(host)
+                            } else {
+                                Task { await model.open(hostId: host.hostId) }
+                            }
                         } label: {
                             HostRow(host: host, isOpen: model.host?.hostId == host.hostId, live: model.isConnected)
                         }
                         .buttonStyle(.pressable(scale: 0.98))
                         .accessibilityIdentifier("host.row.\(host.hostId)")
                         .contextMenu {
+                            if host.engineChoices.count > 1 {
+                                Button {
+                                    choosingEngine = .paired(host)
+                                } label: {
+                                    Label("Choose Agent…", systemImage: "square.stack.3d.up")
+                                }
+                            }
                             Button {
                                 path.append(.rename(host.hostId))
                             } label: {
@@ -62,30 +175,18 @@ struct HostListView: View {
                         }
                     }
 
-                    Button {
-                        pairing = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "plus")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 34, height: 34)
-                                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            Text("Add a computer")
-                                .font(.body.weight(.medium))
-                            Spacer(minLength: 0)
-                            Image(systemName: "qrcode.viewfinder")
-                                .foregroundStyle(.tertiary)
+                    // The account's computers. Tapping one asks which agent to
+                    // drive; there is no code to scan and nothing to type.
+                    if model.account.session?.isUsable == true {
+                        if !model.account.desktops.isEmpty {
+                            sectionHeader("我的电脑")
+                            ForEach(model.account.desktops) { desktop in
+                                accountRow(desktop)
+                            }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .contentShape(.rect)
                     }
-                    .buttonStyle(.pressable(scale: 0.98))
-                    .accessibilityIdentifier("hosts.add")
-                    .padding(.top, 4)
 
-                    Text("Long-press a computer to rename or forget it.")
+                    Text("点一下电脑，选择要连接的 Agent。")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,8 +197,16 @@ struct HostListView: View {
                 .padding(.vertical, 6)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .navigationTitle("Computers")
+            // "Agents", not "Computers": the list now holds one agent that is
+            // not a computer at all.
+            .navigationTitle("Agents")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                // One Keychain read per opening, not per render: the red pill is
+                // an answer about stored keys, and saving one in Settings is a
+                // trip away from this list.
+                model.localAgent.refreshKeyPresence()
+            }
             .navigationDestination(for: HostRoute.self) { route in
                 switch route {
                 case .rename(let hostId):
@@ -109,10 +218,140 @@ struct HostListView: View {
                     }
                 }
             }
+            .sheet(item: $choosingEngine) { choice in
+                EnginePickerSheet(
+                    desktopName: choice.name,
+                    engines: choice.engines,
+                    current: choice.current,
+                    allowsAll: choice.current != nil,
+                ) { engine in
+                    switch choice {
+                    case .account(let desktop):
+                        guard let engine else { return }
+                        Task { await connect(desktop, engine: engine) }
+                    case .paired(let host):
+                        Task { await model.chooseEngine(engine, for: host.hostId) }
+                    }
+                }
+            }
             .sheet(isPresented: $pairing) {
                 PairingSheet()
             }
         }
+    }
+}
+
+/// The agent that runs on this phone.
+///
+/// First in the list because it is the only row that needs no other device to
+/// be awake, and drawn with the same measures as a computer so the two read as
+/// the same kind of choice. The two capsules are the whole difference: "On-device"
+/// says where it runs, and the red one appears only while no model provider has
+/// been configured -- see `APIKeyPresence`.
+private struct LocalAgentRow: View {
+    let state: LocalAgentController.State
+    let configured: Bool
+    let isOpen: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cpu")
+                .font(.body.weight(.medium))
+                .foregroundStyle(isOpen ? Theme.onAccent : Color.secondary)
+                .frame(width: 34, height: 34)
+                .background(
+                    isOpen ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.fill.tertiary),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous),
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("On-Device Agent (Experimental)")
+                    .font(.body.weight(isOpen ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    // The title is the part that can be guessed from context;
+                    // the capsules are the part that answers "why can't I use
+                    // this", so the title yields its width first.
+                    .minimumScaleFactor(0.9)
+
+                HStack(spacing: 4) {
+                    badge(
+                        "On-device",
+                        identifier: "host.local.badge.local",
+                        tint: .secondary,
+                        fill: AnyShapeStyle(.fill.tertiary),
+                    )
+                    if !configured {
+                        badge(
+                            "No model configured",
+                            identifier: "host.local.badge.unconfigured",
+                            tint: .red,
+                            fill: AnyShapeStyle(Color.red.opacity(0.15)),
+                        )
+                    }
+                }
+                // Capsules keep their full text: a warning that reads "No model
+                // configu…" is not a warning.
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+
+                if case .failed(let message) = state {
+                    // The one state that must not be silent: a tap that did not
+                    // work has to say why, in the row it happened in.
+                    Text(verbatim: message)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if case .starting = state {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("host.local.starting")
+            } else if isOpen {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Theme.running)
+                        .frame(width: 6, height: 6)
+                    Text("connected")
+                        .font(.caption2.weight(.medium))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(.fill.quaternary, in: Capsule())
+                .transition(.pop)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background {
+            if isOpen {
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(Theme.selectionFill)
+            }
+        }
+        .contentShape(.rect)
+        .animation(.mizarSmooth, value: isOpen)
+    }
+
+    /// One capsule under the title, in the same language as ``HostBadges``.
+    private func badge(
+        _ text: LocalizedStringKey,
+        identifier: String,
+        tint: Color,
+        fill: AnyShapeStyle,
+    ) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(fill, in: Capsule())
+            .accessibilityIdentifier(identifier)
     }
 }
 
@@ -300,9 +539,20 @@ extension PairedHost: @retroactive Identifiable {
 /// harness cannot set. On screen it is always the searching mark; see the
 /// convenience initialiser.
 struct UnpairedView<Mark: View>: View {
+    /// Optional: the snapshot harness renders this screen without a model, and
+    /// an injected-environment read that traps would take the golden with it.
+    @Environment(AppModel.self) private var model: AppModel?
     @State private var showingPairing = false
+    /// The computer whose agent is being chosen.
+    @State private var choosing: AccountDesktop?
+    @State private var opening = false
     /// The mark above the copy. Always the searching mark on screen.
     private let mark: Mark
+
+    /// Whether an account can list this person's computers.
+    private var signedIn: Bool {
+        model?.account.session?.isUsable == true
+    }
 
     init(mark: Mark) {
         self.mark = mark
@@ -334,20 +584,32 @@ struct UnpairedView<Mark: View>: View {
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
-                    Text("In DSH's plugin panel, enter dsh-mizar to install the plugin, then restart DSH. When the panel shows a code, come back here and scan it.")
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 12)
-                        .padding(.horizontal, 30)
-                    Text("dsh plugin --profile desktop add dsh-mizar")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.white.opacity(0.62))
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.08), in: Capsule())
-                        .padding(.top, 14)
+                    if signedIn {
+                        Text("用同一个账户登录过的电脑都在下面，点一下就能连。")
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 12)
+                            .padding(.horizontal, 30)
+                        computers
+                            .padding(.top, 18)
+                            .padding(.horizontal, 12)
+                    } else {
+                        Text("In DSH's plugin panel, enter dsh-mizar to install the plugin, then restart DSH. When the panel shows a code, come back here and scan it.")
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 12)
+                            .padding(.horizontal, 30)
+                        Text("dsh plugin --profile desktop add dsh-mizar")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.white.opacity(0.62))
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.white.opacity(0.08), in: Capsule())
+                            .padding(.top, 14)
+                    }
                     Spacer()
                     Button {
                         showingPairing = true
@@ -375,6 +637,52 @@ struct UnpairedView<Mark: View>: View {
         }
         .environment(\.colorScheme, .dark)
     }
+
+    /// The account's computers: no camera, no code, nothing to type.
+    private var computers: some View {
+        VStack(spacing: 0) {
+            let desktops = model?.account.desktops ?? []
+            if desktops.isEmpty {
+                Text("正在读取电脑…")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.vertical, 18)
+            } else {
+                ForEach(Array(desktops.enumerated()), id: \.element.id) { entry in
+                    if entry.offset > 0 {
+                        Divider().overlay(.white.opacity(0.08))
+                    }
+                    Button {
+                        choosing = entry.element
+                    } label: {
+                        AccountDesktopRow(desktop: entry.element)
+                    }
+                    .buttonStyle(.pressable(scale: 0.98))
+                    .disabled(!entry.element.online || opening)
+                    .accessibilityIdentifier("unpaired.account.\(entry.element.deviceId)")
+                }
+            }
+        }
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    /// Choose an agent on a computer and open it, the way the agent list does
+    /// once something is paired.
+    private func connect(_ desktop: AccountDesktop, engine: AgentEngine) async {
+        opening = true
+        defer { opening = false }
+        do {
+            let connection = try await model?.account.connect(to: desktop, engine: engine)
+            guard let connection, let origin = URL(string: RelayTier.paidBaseURL) else { return }
+            await model?.openAccountDesktop(desktop, using: connection, at: origin, engine: engine)
+        } catch {
+            model?.reportAccountFailure(error)
+        }
+    }
 }
 
 extension UnpairedView where Mark == MizarMarkSearching {
@@ -383,4 +691,53 @@ extension UnpairedView where Mark == MizarMarkSearching {
     init() {
         self.init(mark: MizarMarkSearching(accent: Color(red: 0.235, green: 0.796, blue: 0.957), ink: .white))
     }
+}
+
+/// One of the account's computers.
+struct AccountDesktopRow: View {
+    let desktop: AccountDesktop
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "desktopcomputer")
+                .font(.body.weight(.medium))
+                .foregroundStyle(desktop.online ? Color.accentColor : Color.secondary)
+                .frame(width: 34, height: 34)
+                .background(
+                    (desktop.online ? AnyShapeStyle(Color.accentColor.opacity(0.12)) : AnyShapeStyle(.fill.tertiary)),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous),
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(desktop.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(desktop.online ? .primary : .secondary)
+                    .lineLimit(1)
+                Text(desktop.online ? "在线 · 点一下选择 Agent" : "离线")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if desktop.online {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .contentShape(.rect)
+    }
+}
+
+/// A quiet label above a group of rows.
+private func sectionHeader(_ title: String) -> some View {
+    Text(title)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
 }

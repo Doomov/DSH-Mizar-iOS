@@ -65,8 +65,6 @@ struct ComposerBar: View {
     static let commands: [(slash: String, title: LocalizedStringKey, symbol: String)] = [
         ("/goal", "Goal", "target"),
         ("/plan", "Plan", "list.bullet.rectangle"),
-        ("/compact", "Compact", "arrow.down.right.and.arrow.up.left"),
-        ("/model", "Model", "cpu"),
     ]
 
     var body: some View {
@@ -195,7 +193,7 @@ struct ComposerBar: View {
                 showingCommands = false
             }
         }
-        .accessibilityLabel("Commands")
+        .accessibilityLabel(Text("Commands and attachments"))
         .accessibilityIdentifier("composer.commands")
     }
 }
@@ -230,7 +228,7 @@ struct CommandList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PopoverHeader(title: "Commands", systemImage: "plus.circle")
+            PopoverHeader(title: "Commands and attachments", systemImage: "plus.circle")
 
             HStack(spacing: 8) {
                 attachmentButton(

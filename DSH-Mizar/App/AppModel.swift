@@ -5404,6 +5404,15 @@ final class AppModel {
                     + Self.routeName(outcome.route.endpoint),
             )
             hosts = try await credentials.loadAll().sorted { $0.pairedAt < $1.pairedAt }
+            // A pairing is the operator saying "this is my computer". A machine
+            // reached by scanning its code on the same network is a direct
+            // address, and the transport switches default to off -- so the first
+            // connect after pairing was refused with "the transport switches are
+            // off", on a phone that had just been shown a QR code for exactly
+            // that address. The switch the pairing implies is turned on for it.
+            if paired.authority != nil, !settings.values.directConnection {
+                settings.values.directConnection = true
+            }
             // Pairing a second machine is a change of machine like any other, and
             // it used to leave the first one's socket open: the new connection
             // replaced the reference without closing what it replaced, and every

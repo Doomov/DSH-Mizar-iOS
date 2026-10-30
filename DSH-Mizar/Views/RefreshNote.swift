@@ -29,11 +29,11 @@ struct RefreshUnreachableNote: View {
             Text("Can't reach the desktop. Try reconnecting.")
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("refresh.unreachable")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .frame(width: 236, alignment: .leading)
-        .accessibilityIdentifier("refresh.unreachable")
     }
 }
 

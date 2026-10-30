@@ -367,33 +367,26 @@ final class AppFlowLaunchTests: AppFlowTestBase {
             "the list still offers a Retry control; the error must be a row, not a button",
         )
 
-        // A refresh while unreachable must not report an all-clear. It did: the
-        // pass returned without asking anything and the window said "Up to date.
-        // Every conversation on this computer is stored on this phone." -- a claim
-        // about the operator's data made out of a request that was never sent.
+        // A refresh while unreachable must not report an all-clear, and it must
+        // not open a progress window that has nothing to report: the window fills
+        // in, and a window that can only ever fill in is a window that lies. The
+        // button says the one thing the operator can act on, where they tapped.
         let refresh = app.buttons["sessions.refresh"]
         expect(refresh, "there is no way to refresh")
         refresh.tap()
         XCTAssertTrue(
-            app.buttons["sync.done"].waitForExistence(timeout: Self.patience),
-            "tapping refresh did not show the progress window",
+            app.staticTexts["refresh.unreachable"].waitForExistence(timeout: Self.patience),
+            "tapping refresh against an unreachable computer said nothing",
         )
         XCTAssertFalse(
-            app.staticTexts["Up to date"].waitForExistence(timeout: 4),
-            "a refresh against an unreachable computer claimed everything was already stored",
+            app.buttons["sync.done"].waitForExistence(timeout: 2),
+            "a refresh with no socket opened a progress window anyway",
         )
-        // The pass has finished when the window stops saying it is looking and
-        // starts saying why it could not. Waiting for that is what makes the
-        // second refresh below a second pass rather than a tap ignored by the
-        // one still running.
+        // Anywhere else puts the note away: it is a sentence, not a decision.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.62)).tap()
         XCTAssertTrue(
-            app.staticTexts["sync.problem"].waitForExistence(timeout: Self.patience),
-            "the failed refresh never reported why it failed",
-        )
-        app.buttons["sync.done"].tap()
-        XCTAssertTrue(
-            app.buttons["sync.done"].waitForNonExistence(timeout: 5),
-            "the progress window did not close",
+            app.staticTexts["refresh.unreachable"].waitForNonExistence(timeout: 5),
+            "the note stayed up after a tap somewhere else",
         )
 
         // And when the computer comes back, the list recovers through the gesture it

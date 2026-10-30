@@ -62,20 +62,37 @@ struct UsageHeatmap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            HStack(alignment: .top, spacing: 5) {
-                ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    VStack(spacing: 5) {
-                        ForEach(column, id: \.date) { cell in
-                            square(for: cell.day)
-                        }
-                        // A short column (the last one, usually) keeps the rows
-                        // aligned by holding its own height.
-                        if column.count < 7 {
-                            Color.clear.frame(width: 1, height: 0)
+            // The grid takes whatever room the card was given, and the squares
+            // grow into it. They used to be a fixed eleven points, which made
+            // "two thirds of the page" a card two thirds of the page tall with
+            // a stamp-sized month inside it -- the figure the page exists for,
+            // drawn as a footnote.
+            GeometryReader { proxy in
+                let gap: CGFloat = 5
+                let across = CGFloat(max(1, columns.count))
+                let side = max(
+                    6,
+                    min(
+                        (proxy.size.width - gap * (across - 1)) / across,
+                        (proxy.size.height - gap * 6) / 7,
+                    ),
+                )
+                HStack(alignment: .top, spacing: gap) {
+                    ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
+                        VStack(spacing: gap) {
+                            ForEach(column, id: \.date) { cell in
+                                square(for: cell.day, side: side)
+                            }
+                            // A short column (the last one, usually) keeps the
+                            // rows aligned by holding its own height.
+                            if column.count < 7 {
+                                Color.clear.frame(width: 1, height: 0)
+                            }
                         }
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             footer
         }
@@ -133,10 +150,15 @@ struct UsageHeatmap: View {
         }
     }
 
-    private func square(for day: UsageDay?) -> some View {
-        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+    /// One day's square.
+    ///
+    /// - Parameters:
+    ///   - day: the day, when the host has a figure for it.
+    ///   - side: the edge length the grid worked out for the room it has.
+    private func square(for day: UsageDay?, side: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: max(2.5, side * 0.22), style: .continuous)
             .fill(fill(for: day))
-            .frame(width: 11, height: 11)
+            .frame(width: side, height: side)
     }
 
     /// The colour of one day: the accent, four steps up from an empty square.

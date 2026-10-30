@@ -543,8 +543,6 @@ struct UnpairedView<Mark: View>: View {
     /// an injected-environment read that traps would take the golden with it.
     @Environment(AppModel.self) private var model: AppModel?
     @State private var showingPairing = false
-    /// The computer whose agent is being chosen.
-    @State private var choosing: AccountDesktop?
     @State private var opening = false
     /// The mark above the copy. Always the searching mark on screen.
     private let mark: Mark
@@ -585,6 +583,14 @@ struct UnpairedView<Mark: View>: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                     if signedIn {
+                        // Who this phone thinks it is: a wrong account is the
+                        // one failure this screen cannot otherwise show.
+                        Text(model?.account.user?.email ?? "已登录")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .padding(.top, 6)
+                    }
+                    if signedIn {
                         Text("用同一个账户登录过的电脑都在下面，点一下就能连。")
                             .font(.body)
                             .foregroundStyle(.white.opacity(0.7))
@@ -594,6 +600,33 @@ struct UnpairedView<Mark: View>: View {
                         computers
                             .padding(.top, 18)
                             .padding(.horizontal, 12)
+                        if let error = model?.lastError {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red.opacity(0.9))
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 10)
+                                .padding(.horizontal, 20)
+                        }
+                        if let model, !model.account.desktops.isEmpty,
+                           model.account.desktops.allSatisfy({ !$0.online }) {
+                            Text("电脑显示离线：请确认电脑上的 AGI Mizar 正在运行。")
+                                .font(.footnote)
+                                .foregroundStyle(.white.opacity(0.55))
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 10)
+                                .padding(.horizontal, 20)
+                        }
+                        Button {
+                            Task { await model?.account.loadDesktops() }
+                        } label: {
+                            Label("刷新列表", systemImage: "arrow.clockwise")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.pressable(scale: 0.97, dims: true))
+                        .accessibilityIdentifier("unpaired.refresh")
                     } else {
                         Text("In DSH's plugin panel, enter dsh-mizar to install the plugin, then restart DSH. When the panel shows a code, come back here and scan it.")
                             .font(.body)
@@ -653,7 +686,7 @@ struct UnpairedView<Mark: View>: View {
                         Divider().overlay(.white.opacity(0.08))
                     }
                     Button {
-                        choosing = entry.element
+                        Task { await connect(entry.element, engine: nil) }
                     } label: {
                         AccountDesktopRow(desktop: entry.element)
                     }
@@ -672,7 +705,7 @@ struct UnpairedView<Mark: View>: View {
 
     /// Choose an agent on a computer and open it, the way the agent list does
     /// once something is paired.
-    private func connect(_ desktop: AccountDesktop, engine: AgentEngine) async {
+    private func connect(_ desktop: AccountDesktop, engine: AgentEngine?) async {
         opening = true
         defer { opening = false }
         do {

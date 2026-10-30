@@ -40,6 +40,8 @@ struct HostListView: View {
     @State private var choosingEngine: AgentChoice?
     /// Which connection is being opened, so the sheet can show a spinner.
     @State private var openingEngine: AgentEngine?
+    /// Whether the computer list is being read again.
+    @State private var refreshing = false
 
     /// A computer waiting for its agent to be chosen.
     private enum AgentChoice: Identifiable {
@@ -137,6 +139,7 @@ struct HostListView: View {
                     .disabled(model.localAgent.state == .starting)
                     .accessibilityIdentifier("host.row.local")
 
+                    sectionHeader("我的电脑")
                     ForEach(model.hosts, id: \.hostId) { host in
                         Button {
                             // A computer that serves three agents is asked which
@@ -167,23 +170,25 @@ struct HostListView: View {
                             } label: {
                                 Label("Rename…", systemImage: "pencil")
                             }
-                            Button(role: .destructive) {
-                                Task { await model.forget(hostId: host.hostId) }
-                            } label: {
-                                Label("Forget", systemImage: "trash")
-                            }
                         }
                     }
 
-                    // The account's computers. Tapping one asks which agent to
-                    // drive; there is no code to scan and nothing to type.
+                    // The account's computers, in the same section as the
+                    // paired ones: to the operator they are one list -- the
+                    // machines this phone can open -- and which token reaches
+                    // them is this app's business, not theirs.
                     if model.account.session?.isUsable == true {
-                        if !model.account.desktops.isEmpty {
-                            sectionHeader("我的电脑")
-                            ForEach(model.account.desktops) { desktop in
-                                accountRow(desktop)
-                            }
+                        ForEach(model.account.desktops) { desktop in
+                            accountRow(desktop)
                         }
+                    }
+                    if model.account.session?.isUsable != true, model.hosts.isEmpty {
+                        Text("登录后，这里会出现你的电脑。")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
                     }
 
                     Text("点一下电脑，选择要连接的 Agent。")
@@ -192,6 +197,7 @@ struct HostListView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.top, 4)
+                        .padding(.bottom, 2)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -201,6 +207,26 @@ struct HostListView: View {
             // not a computer at all.
             .navigationTitle("Agents")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            refreshing = true
+                            await model.account.loadDesktops()
+                            refreshing = false
+                        }
+                    } label: {
+                        if refreshing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(refreshing)
+                    .accessibilityLabel(Text("Refresh computers"))
+                    .accessibilityIdentifier("hosts.refresh")
+                }
+            }
             .task {
                 // One Keychain read per opening, not per render: the red pill is
                 // an answer about stored keys, and saving one in Settings is a

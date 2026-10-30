@@ -41,6 +41,8 @@ struct SidebarView: View {
     /// system's own are.
     @State private var showingComputers = false
     @State private var showingSync = false
+    /// Whether the "cannot reach the desktop" note is out.
+    @State private var showingUnreachable = false
     @State private var showingNewSession = false
     @State private var showingNewWorkspace = false
     /// The name-a-folder sheet the on-device agent uses instead.
@@ -118,6 +120,12 @@ struct SidebarView: View {
             computerButton
             Spacer(minLength: 0)
             Button {
+                // No socket, no pass: the note says so where the button is,
+                // rather than opening a window that would never fill.
+                guard model.isConnected else {
+                    showingUnreachable = true
+                    return
+                }
                 // The window first, whatever else happens. A pass already on the
                 // socket cannot be started a second time, and a tap on the button
                 // that started it is how the operator gets its window back after
@@ -145,6 +153,9 @@ struct SidebarView: View {
             .accessibilityIdentifier("sessions.refresh")
             .mizarPopover(isPresented: $showingSync) {
                 SyncProgressSheet()
+            }
+            .mizarPopover(isPresented: $showingUnreachable, arrowEdge: .bottom) {
+                RefreshUnreachableNote()
             }
         }
     }
@@ -238,9 +249,11 @@ struct SidebarView: View {
                 .frame(width: PopoverSize.compact.width, height: PopoverSize.compact.height)
         }
         // A switch that has landed puts the window away: the computer was chosen
-        // to look at its sessions, not to keep looking at the list.
+        // to look at its sessions, not to keep looking at the list. `old` may be
+        // nil -- leaving the on-device agent for a computer is exactly that --
+        // so only "the same computer again" is not a switch.
         .onChange(of: model.host?.hostId) { old, new in
-            guard old != nil, new != nil, old != new, showingComputers else { return }
+            guard new != nil, old != new, showingComputers else { return }
             Task {
                 try? await Task.sleep(for: .milliseconds(450))
                 showingComputers = false

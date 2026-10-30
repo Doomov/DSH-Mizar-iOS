@@ -642,3 +642,5 @@
 "All agents" = "全部 Agent";
 "Every session on this computer, mixed together" = "这台电脑上的全部会话，混在一起";
 "Choose Agent…" = "选择 Agent…";
+"Can't reach the desktop. Try reconnecting." = "无法连接到桌面端，请尝试重连";
+"Refresh computers" = "刷新电脑列表";

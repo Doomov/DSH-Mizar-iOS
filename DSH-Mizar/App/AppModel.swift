@@ -2802,9 +2802,12 @@ final class AppModel {
         if let index = hosts.firstIndex(where: { $0.hostId == hostId }) { hosts[index] = updated }
         if host?.hostId == hostId { host = updated }
         try? await credentials.save(updated)
-        // Asked for the computer that is not open: storing the choice is the
-        // whole of it, and it is used the next time they open that machine.
-        guard host?.hostId == hostId else { return }
+        // Asked for a computer while another is open: storing the choice is the
+        // whole of it. Except under the on-device agent, where `host` is nil by
+        // design (``enterLocalAgent``), so "not the open computer" cannot be
+        // told from "nothing is open" -- and a tap there means leave the local
+        // agent and open this computer, which ``open(hostId:)`` already does.
+        guard host?.hostId == hostId || isLocalAgentMode else { return }
         await open(hostId: hostId)
     }
 

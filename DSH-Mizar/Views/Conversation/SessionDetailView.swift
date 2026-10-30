@@ -82,6 +82,8 @@ struct SessionDetailView: View {
     @State private var didReachBottom = false
     /// What has been typed, held here because the command button writes to it.
     @State private var draft = ""
+    /// The write waiting for the typing to pause.
+    @State private var draftSaveTask: Task<Void, Never>?
     /// Whether the field has the keyboard. Owned here so a tap on the
     /// conversation can put it away.
     @State private var composerFocused = false
@@ -106,6 +108,8 @@ struct SessionDetailView: View {
     /// This is the narrower claim: someone tapped the control and it has not
     /// answered yet.
     @State private var refreshing = false
+    /// Whether the "cannot reach the desktop" note is out.
+    @State private var showingUnreachable = false
     /// Where the conversation is on its way to its first position.
     ///
     /// The page used to reveal the conversation at whatever offset a new
@@ -359,6 +363,12 @@ struct SessionDetailView: View {
                 // open at all; pulling the conversation down is invisible, and
                 // the composer sits on top of it.
                 Button {
+                    // Nothing to read without a socket: the note comes out of
+                    // the button instead of a glyph that would only turn.
+                    guard model.isConnected else {
+                        showingUnreachable = true
+                        return
+                    }
                     Task {
                         refreshing = true
                         await reload()
@@ -375,6 +385,9 @@ struct SessionDetailView: View {
                 .disabled(refreshing)
                 .accessibilityLabel(Text("Refresh"))
                 .accessibilityIdentifier("session.refresh")
+                .mizarPopover(isPresented: $showingUnreachable, arrowEdge: .top) {
+                    RefreshUnreachableNote()
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -398,6 +411,10 @@ struct SessionDetailView: View {
             // A different session is a different conversation, and the typewriter
             // state belongs to the one that was on screen.
             settledAnswerIds = []
+            // What was typed here last time and never sent. Read before the
+            // first frame the field draws, so the paragraph is simply there
+            // rather than appearing a moment after the screen does.
+            draft = DraftStore.text(for: sessionId)
             // A session just started from the home screen arrives with its first
             // prompt already sent: put it where it will land, and watch for the
             // host to record it, exactly as for a send from this screen.
@@ -416,6 +433,13 @@ struct SessionDetailView: View {
             // is looking at any more.
             model.noteConversationTurns([], for: sessionId)
             turnIndex.withdraw(sessionId: sessionId)
+            // The last keystrokes, written now rather than by the debounce that
+            // this screen is about to take with it.
+            draftSaveTask?.cancel()
+            DraftStore.save(draft, for: sessionId)
+        }
+        .onChange(of: draft) { _, _ in
+            scheduleDraftSave()
         }
         .onChange(of: shownStats?.title) { _, title in
             turnIndex.publish(sessionId: sessionId, title: title, turns: shownTurns)
@@ -1002,6 +1026,22 @@ struct SessionDetailView: View {
     /// Put a message in flight: an optimistic bubble at the bottom of the
     /// conversation, and a ghost of the text lifting out of the field towards
     /// it.
+    /// Write the draft down, one keystroke burst at a time.
+    ///
+    /// Debounced rather than per-character: the defaults database is not the
+    /// place for sixty writes a second, and nothing is lost by a third of a
+    /// second's delay -- the screen going away writes the last one by hand.
+    private func scheduleDraftSave() {
+        draftSaveTask?.cancel()
+        let text = draft
+        let id = sessionId
+        draftSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            DraftStore.save(text, for: id)
+        }
+    }
+
     private func launch(_ text: String) {
         let message = OutgoingMessage(text: text)
         let fly = !farFromBottom && !Motion.reduced && ComposerGeometry.shared.field != .zero
@@ -1059,6 +1099,7 @@ struct SessionDetailView: View {
     private func settle(_ text: String) {
         outgoing.removeAll { $0.text == text }
         if flight?.text == text { flight = nil }
+        DraftStore.clear(sessionId)
     }
 
     // MARK: - The held prompt

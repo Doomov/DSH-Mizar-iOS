@@ -173,18 +173,20 @@ export class TurnRunner {
       })
 
       let step = 1
+      let turnTokens = 0
       while (true) {
         // The abort check comes before the engine call: a cancelled turn
         // must not spend another engine round-trip, however the engine
         // handles its own signal.
         if (signal.aborted) {
-          await this.#appendEnd(sessionId, turn, { kind: 'stopped' })
+          await this.#appendEnd(sessionId, turn, { kind: 'stopped' }, turnTokens)
           return { turn }
         }
         const outcome = await this.#engineStep(sessionId, turn, step, signal)
+        turnTokens += outcome.tokens ?? 0
 
         if (signal.aborted) {
-          await this.#appendEnd(sessionId, turn, { kind: 'stopped' })
+          await this.#appendEnd(sessionId, turn, { kind: 'stopped' }, turnTokens)
           return { turn }
         }
         if (outcome.finishReason === 'error') {
@@ -194,12 +196,12 @@ export class TurnRunner {
               code: outcome.errorCode ?? 'REMOTE_ERROR',
               message: outcome.errorMessage ?? 'the engine failed',
             },
-          })
+          }, turnTokens)
           return { turn }
         }
 
         if (outcome.toolCalls.length === 0) {
-          await this.#appendEnd(sessionId, turn, { kind: 'completed' })
+          await this.#appendEnd(sessionId, turn, { kind: 'completed' }, turnTokens)
           return { turn }
         }
 
@@ -207,7 +209,7 @@ export class TurnRunner {
           await this.#appendEnd(sessionId, turn, {
             kind: 'error',
             error: { code: 'STEP_LIMIT', message: `the turn exceeded ${MAX_STEPS} steps` },
-          })
+          }, turnTokens)
           return { turn }
         }
 
@@ -288,16 +290,28 @@ export class TurnRunner {
       })
     }
 
+    // What this step cost, so the turn can put the total on its own `turn/end`
+    // -- the record the phone's footer reads. Summed before any early return:
+    // a step that failed after spending tokens still spent them.
+    const spent =
+      result.usage === undefined
+        ? 0
+        : result.usage.uncachedInputTokens +
+          result.usage.outputTokens +
+          result.usage.cacheReadTokens +
+          result.usage.cacheWriteTokens
+
     if (result.finishReason === 'error') {
       return {
         finishReason: 'error',
         toolCalls: [],
+        tokens: spent,
         ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
         ...(result.errorMessage !== undefined ? { errorMessage: result.errorMessage } : {}),
       }
     }
     if (result.finishReason === 'aborted') {
-      return { finishReason: 'aborted', toolCalls: [] }
+      return { finishReason: 'aborted', toolCalls: [], tokens: spent }
     }
 
     for (const call of result.toolCalls) {
@@ -305,7 +319,7 @@ export class TurnRunner {
       await this.#runTool(sessionId, turn, step, call, signal)
     }
 
-    return { finishReason: result.finishReason, toolCalls: result.toolCalls }
+    return { finishReason: result.finishReason, toolCalls: result.toolCalls, tokens: spent }
   }
 
   /**
@@ -501,8 +515,18 @@ export class TurnRunner {
     }
   }
 
-  async #appendEnd(sessionId: string, turn: number, reason: Record<string, unknown>): Promise<void> {
-    await this.#store.append(sessionId, 'turn/end', { turn, reason })
+  async #appendEnd(
+    sessionId: string,
+    turn: number,
+    reason: Record<string, unknown>,
+    tokens = 0,
+  ): Promise<void> {
+    // What this turn cost, on the record the phone reads it from. The desktop
+    // host computes the same number from the same samples; here they are in
+    // hand, because every step that reported usage went through this runner.
+    const data: Record<string, unknown> = { turn, reason }
+    if (tokens > 0) data.mizarTokenUsage = { totalTokens: tokens }
+    await this.#store.append(sessionId, 'turn/end', data)
   }
 
   async #accumulateTiming(sessionId: string, ms: number, tool: boolean): Promise<void> {
@@ -540,6 +564,8 @@ interface StepOutcome {
   toolCalls: readonly EngineToolCall[]
   errorCode?: string
   errorMessage?: string
+  /** Billed tokens this step reported, when it reported any. */
+  tokens?: number
 }
 
 /** The readable text of a content-part array, or `''`. */

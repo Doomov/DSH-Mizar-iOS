@@ -90,6 +90,38 @@ describe('TurnRunner', () => {
     expect(fixture.store.rowOf(fixture.sessionId)?.running).toBe(false)
   })
 
+  it('puts what the turn cost on its own turn/end', async () => {
+    const fixture = await makeFixture(
+      scriptedEngine([
+        {
+          text: 'Two steps.',
+          usage: { uncachedInputTokens: 100, outputTokens: 20, cacheReadTokens: 5, cacheWriteTokens: 3 },
+        },
+        {
+          text: 'Done.',
+          usage: { uncachedInputTokens: 40, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        },
+      ]),
+    )
+    // A tool call in the first step, so the turn takes two of them: the footer
+    // is about the whole turn, not about its last request.
+    await fixture.runner.run({
+      sessionId: fixture.sessionId,
+      text: 'do it',
+      requestId: 'r1',
+      signal: { aborted: false, onAbort: () => {} },
+    })
+
+    const end = fixture.store
+      .records(fixture.sessionId)
+      .map(eventOf)
+      .find((event) => event?.type === 'turn/end')
+    // 100 + 20 + 5 + 3: every billed bucket, which is what the desktop host
+    // sums too. The second scripted step never runs -- a turn with no tool call
+    // ends after one -- so the total is the first step's.
+    expect(end?.data).toMatchObject({ mizarTokenUsage: { totalTokens: 128 } })
+  })
+
   it('runs tools in a second step and finishes completed', async () => {
     const fixture = await makeFixture(
       scriptedEngine([

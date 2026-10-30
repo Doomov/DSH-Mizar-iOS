@@ -427,20 +427,6 @@ final class Feature094UITests: XCTestCase {
     /// launch with nothing selected leaves it out, opening a session puts it
     /// away. The new-session row being hittable is the sidebar being in front.
     ///
-    /// - Parameter app: the running app.
-    private func openSidebar(_ app: XCUIApplication) {
-        let marker = app.buttons["sessions.new"]
-        if marker.exists, marker.isHittable { return }
-        let toggle = app.buttons["shell.sidebarToggle"]
-        expect(toggle, "there is no way to open the sidebar")
-        toggle.tap()
-        let shown = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"),
-            object: marker,
-        )
-        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
-    }
-
     // MARK: - The session list
 
     /// Expand the fixture's workspace and hand back the "Mock session" row.

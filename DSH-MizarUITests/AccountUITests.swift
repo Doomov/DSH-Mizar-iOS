@@ -363,30 +363,6 @@ final class AccountUITests: XCTestCase {
     }
 
     /// Open the sidebar, if it is not out already.
-    /// - Parameter app: the running app.
-    private func openSidebar(_ app: XCUIApplication) {
-        let marker = app.buttons["sessions.new"]
-        if marker.exists, marker.isHittable { return }
-        let toggle = app.buttons["shell.sidebarToggle"]
-        if !toggle.waitForExistence(timeout: Self.patience) {
-            let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = "no-sidebar"
-            shot.lifetime = .keepAlways
-            add(shot)
-            dismissSystemAlertIfPresent(app)
-            if !toggle.waitForExistence(timeout: Self.patience) {
-                XCTFail("there is no way to open the sidebar")
-                return
-            }
-        }
-        toggle.tap()
-        let shown = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"),
-            object: marker,
-        )
-        XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: Self.patience), .completed, "the sidebar did not open")
-    }
-
     /// Open the settings sheet.
     /// - Parameter app: the running app.
     private func openSettings(_ app: XCUIApplication) {

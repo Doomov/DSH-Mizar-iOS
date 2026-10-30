@@ -626,7 +626,11 @@ private struct ConversationRow: View {
     var body: some View {
         switch item {
         case .message(_, .user, let text, _):
-            UserBubble(text: text, tail: isLastPrompt)
+            UserBubble(
+                text: text,
+                tail: isLastPrompt,
+                attachments: DeliveredAttachments.attachments(for: text),
+            )
         case .message(_, .assistant, let text, _):
             AgentText(text: text, typing: typing, onTypingStarted: onTypingStarted)
         case .message(_, .system, let text, _):
@@ -724,10 +728,42 @@ private struct UserBubble: View {
     /// Whether the corner nearest the answer tightens, the quiet tail that says
     /// "this is the message that was answered".
     let tail: Bool
+    /// What this phone sent with the prompt, above the words.
+    ///
+    /// The computer's record carries the text alone, so an attachment that
+    /// went with it would otherwise vanish the moment the screen reloaded --
+    /// the operator sees the photo go up and then nothing.
+    var attachments: [DeliveredAttachment] = []
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 56)
+            VStack(alignment: .trailing, spacing: 6) {
+                if !attachments.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { attachment in
+                            HStack(spacing: 4) {
+                                Image(systemName: attachment.isImage ? "photo" : "doc")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(attachment.label)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(Theme.onAccent.opacity(0.85))
+                            .padding(.horizontal, 8)
+                            .frame(height: 22)
+                            .background(Theme.onAccent.opacity(0.12), in: Capsule())
+                        }
+                    }
+                    .accessibilityIdentifier("message.attachments")
+                }
+                bubble
+            }
+        }
+    }
+
+    private var bubble: some View {
+        HStack(spacing: 0) {
             MessageText(text: text)
                 .foregroundStyle(Theme.onAccent)
                 .tint(Theme.onAccent)
@@ -744,6 +780,7 @@ private struct UserBubble: View {
                     .fill(Color.accentColor.gradient)
                 }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 

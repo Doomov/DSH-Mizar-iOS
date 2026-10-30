@@ -557,7 +557,16 @@ struct ComposerView: View {
                 )
                 ids.append(ref.attachmentId)
             }
-            return await model.sendPrompt(text, attachmentIds: ids, to: sessionId, mode: mode)
+            let accepted = await model.sendPrompt(text, attachmentIds: ids, to: sessionId, mode: mode)
+            if accepted {
+                // The record the computer writes is the words alone, so the
+                // phone keeps what went with them -- see ``DeliveredAttachments``.
+                DeliveredAttachments.record(
+                    drafts.map { DeliveredAttachment(isImage: $0.isImage, name: $0.name) },
+                    for: text,
+                )
+            }
+            return accepted
         } catch {
             attachmentError = Self.describeAttachmentFailure(error)
             return false

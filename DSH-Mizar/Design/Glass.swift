@@ -45,7 +45,7 @@ extension View {
         liquidSurface(in: RoundedRectangle(cornerRadius: radius, style: .continuous), tint: tint)
     }
 
-    func glassEffect(_ effect: Any? = nil, in shape: some Shape) -> some View {
+    func glassEffect(_ effect: GlassShim = .regular, in shape: some Shape) -> some View {
         self.background(.ultraThinMaterial, in: shape)
     }
 

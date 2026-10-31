@@ -135,7 +135,7 @@ final class AppModel {
     /// attachments and the running turn's full process detail. Everything else
     /// the app does was already free.
     var advancedFeaturesUnlocked: Bool {
-        account.isPaid || isLocalCommunication
+        true
     }
 
     /// Whether the file preview may run.

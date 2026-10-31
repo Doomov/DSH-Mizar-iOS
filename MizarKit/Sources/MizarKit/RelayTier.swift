@@ -35,7 +35,7 @@ public enum RelayTier {
     /// - Parameter paid: whether the signed-in account is paid.
     /// - Returns: the matching relay origin.
     public static func baseURL(paid: Bool) -> String {
-        paid ? paidBaseURL : freeBaseURL
+        freeBaseURL
     }
 
     /// Whether an origin is one of the two public relays.

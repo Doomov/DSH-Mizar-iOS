@@ -286,12 +286,10 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
         guard inet_pton(AF_INET, address.ip, &destination.sin_addr) == 1 else {
             throw MizarNetError.socketFailed(reason: "\(address.ip) is not an IPv4 address")
         }
-        let count = data.count
-        let sent = data.withUnsafeBytes { buffer -> Int in
-            let base = buffer.baseAddress
-            return withUnsafePointer(to: destination) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
-                    sendto(descriptor, base, count, 0, sockPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+        let sent = withUnsafePointer(to: destination) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
+                data.withUnsafeBytes { buffer in
+                    sendto(descriptor, buffer.baseAddress, buffer.count, 0, sockPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
                 }
             }
         }

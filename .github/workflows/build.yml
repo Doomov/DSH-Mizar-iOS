@@ -20,7 +20,7 @@ jobs:
         run: |
           set -e
           mkdir -p build/Payload
-          OTHER_SWIFT_FLAGS='-disable-sandbox' xcodebuild \
+          OTHER_SWIFT_FLAGS='-disable-sandbox -Xfrontend -strict-concurrency=targeted' xcodebuild \
             -project DSH-Mizar.xcodeproj \
             -scheme DSH-Mizar \
             -configuration Release \

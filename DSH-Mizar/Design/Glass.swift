@@ -54,6 +54,20 @@ extension View {
     }
 }
 
+struct GlassButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+    }
+}
+
+extension ButtonStyle where Self == GlassButtonStyle {
+    static var glass: GlassButtonStyle { GlassButtonStyle() }
+}
+
 struct GlassProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

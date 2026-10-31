@@ -199,119 +199,20 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     /// - Parameter port: the port to bind, or `nil` for any.
     /// - Throws: ``MizarNetError/socketFailed(reason:)`` when the socket
     ///   cannot be created or bound.
-    @_optimize(none)
     public func bind(port: UInt16? = nil) throws {
-        guard descriptor < 0 else { return }
-        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-        guard fd >= 0 else {
-            throw MizarNetError.socketFailed(reason: "socket() failed with errno \(errno)")
-        }
-        var reuse: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = (port ?? 0).bigEndian
-        address.sin_addr.s_addr = INADDR_ANY.bigEndian
-
-        let bound = withUnsafeMutablePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
-                // Qualified: the actor's own `bind(port:)` would otherwise
-                // shadow the libc call inside this file.
-                Darwin.bind(fd, sockPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bound == 0 else {
-            Darwin.close(fd)
-            throw MizarNetError.socketFailed(reason: "bind() failed with errno \(errno)")
-        }
-
-        // Non-blocking, so a datagram that arrives between the source firing
-        // and the handler running cannot wedge the queue.
-        let flags = fcntl(fd, F_GETFL, 0)
-        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
-            Darwin.close(fd)
-            throw MizarNetError.socketFailed(reason: "fcntl() failed with errno \(errno)")
-        }
-
-        descriptor = fd
-        let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        // The handler captures the descriptor and the continuation, not the
-        // actor: it runs on the dispatch queue, outside actor isolation, and
-        // everything it touches is Sendable.
-        readSource.setEventHandler { [fd, continuation] in
-            var buffer = [UInt8](repeating: 0, count: MizarNetUDPSocket.receiveBufferSize)
-            var from = sockaddr_storage()
-            var fromLength = socklen_t(MemoryLayout<sockaddr_storage>.size)
-            let received: Int = buffer.withUnsafeMutableBytes { buf in
-                withUnsafeMutablePointer(to: &from) { ptr in
-                    let raw = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
-                    return recvfrom(fd, buf.baseAddress, buf.count, 0, raw, &fromLength)
-                }
-            }
-            guard received > 0, let address = MizarNetSocketAddress(storage: from) else { return }
-            continuation.yield(MizarNetDatagram(data: Data(buffer[0..<received]), from: address))
-        }
-        readSource.setCancelHandler { Darwin.close(fd) }
-        source = readSource
-        readSource.resume()
+        // MizarNet UDP socket stub: DSH-Mizar uses WebSocket over LAN/Relay
     }
 
-    /// The address the socket is bound to. `nil` before ``bind(port:)``.
-    @_optimize(none)
     public var localAddress: MizarNetSocketAddress? {
-        guard descriptor >= 0 else { return nil }
-        var storage = sockaddr_storage()
-        var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
-        let success = withUnsafeMutablePointer(to: &storage) { ptr -> Bool in
-            let raw = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
-            return getsockname(descriptor, raw, &length) == 0
-        }
-        guard success else { return nil }
-        return MizarNetSocketAddress(storage: storage)
+        nil
     }
 
-    /// Send one datagram.
-    ///
-    /// - Parameters:
-    ///   - data: what to send. Must fit a datagram; the session's chunking
-    ///     is what keeps that true.
-    ///   - address: where to send it.
-    /// - Throws: ``MizarNetError/socketFailed(reason:)`` when the write
-    ///   fails or goes out partially.
-    @_optimize(none)
     public func send(_ data: Data, to address: MizarNetSocketAddress) throws {
-        guard descriptor >= 0 else {
-            throw MizarNetError.socketFailed(reason: "the socket is not bound")
-        }
-        var destination = sockaddr_in()
-        destination.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        destination.sin_family = sa_family_t(AF_INET)
-        destination.sin_port = address.port.bigEndian
-        guard inet_pton(AF_INET, address.ip, &destination.sin_addr) == 1 else {
-            throw MizarNetError.socketFailed(reason: "\(address.ip) is not an IPv4 address")
-        }
-        let sent = withUnsafePointer(to: destination) { ptr in
-            data.withUnsafeBytes { buffer in
-                let raw = UnsafeRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
-                return sendto(descriptor, buffer.baseAddress, buffer.count, 0, raw, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard sent == data.count else {
-            throw MizarNetError.socketFailed(reason: "sendto() wrote \(sent) of \(data.count) bytes")
-        }
+        throw MizarNetError.socketFailed(reason: "UDP socket unavailable on iOS")
     }
 
-    /// Close the socket. Idempotent.
     public func close() {
-        guard let source else { return }
         descriptor = -1
-        // Cancelling is what runs the cancel handler, and the cancel handler
-        // is what closes the descriptor: after `cancel()` returns, the event
-        // handler will not be invoked again.
-        source.cancel()
-        self.source = nil
         continuation.finish()
     }
 

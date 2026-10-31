@@ -30,24 +30,21 @@ struct RootView: View {
     /// Whether the launch splash is shown at all. See the note in the task.
     private static let splashEnabled = false
 
-    var body: some View {
-        Group {
-            // Nothing is decided until the stored session has been read: the
-            // gate must not flash for somebody who is already signed in.
-            if model.account.phase == .idle {
-                LaunchingView()
-            } else if requiresLogin {
-                WelcomeGateView()
-            } else {
-                phaseContent
-                // The app is *under* the splash, not hidden by it: the splash
-                // is a page with a hole in it, and the hole is what the camera
-                // travels through. So the content is fully drawn from the first
-                // frame, and only settles by a hair as the splash leaves.
+    @ViewBuilder
+    private var baseContent: some View {
+        if model.account.phase == .idle {
+            LaunchingView()
+        } else if requiresLogin {
+            WelcomeGateView()
+        } else {
+            phaseContent
                 .scaleEffect(splashDone ? 1 : 1.03)
                 .animation(.easeOut(duration: 0.4), value: splashDone)
-            }
         }
+    }
+
+    var body: some View {
+        baseContent
         .animation(.mizarSmooth, value: phaseKey)
         .animation(.mizarSmooth, value: requiresLogin)
         // The splash lives in its own window, above the app's: an overlay and a

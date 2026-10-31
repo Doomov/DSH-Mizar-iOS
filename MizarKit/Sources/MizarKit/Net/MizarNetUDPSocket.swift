@@ -96,6 +96,7 @@ public protocol MizarNetDatagramSocket: Sendable {
 }
 
 /// A bound UDP socket that yields what arrives.
+@_optimize(none)
 public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     /// Every datagram that arrives, in arrival order.
     public nonisolated let events: AsyncStream<MizarNetDatagram>

@@ -72,6 +72,14 @@ struct SidebarView: View {
         // once before it re-reads the list, so a phone that came home to the same
         // network switches to the direct link instead of staying on the relay.
         .refreshable { await model.manualRefresh() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                if model.isConnected {
+                    await model.refreshSessions(reconnectingIfNeeded: false)
+                }
+            }
+        }
         // The computer, the refresh and the search stay put at the top; the
         // sessions slide underneath them, softened by the bar's edge as they go.
         .safeAreaBar(edge: .top, spacing: 0) {

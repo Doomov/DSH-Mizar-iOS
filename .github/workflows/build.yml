@@ -27,6 +27,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
             IPHONEOS_DEPLOYMENT_TARGET=18.0 \
+            SWIFT_COMPILATION_MODE=singlefile \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO

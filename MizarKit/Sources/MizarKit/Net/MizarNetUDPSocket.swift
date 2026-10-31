@@ -243,9 +243,11 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
             var buffer = [UInt8](repeating: 0, count: MizarNetUDPSocket.receiveBufferSize)
             var from = sockaddr_storage()
             var fromLength = socklen_t(MemoryLayout<sockaddr_storage>.size)
-            let received = withUnsafeMutablePointer(to: &from) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
-                    recvfrom(fd, &buffer, buffer.count, 0, sockPointer, &fromLength)
+            let received: Int = buffer.withUnsafeMutableBytes { buf in
+                withUnsafeMutablePointer(to: &from) { pointer in
+                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
+                        recvfrom(fd, buf.baseAddress, buf.count, 0, sockPointer, &fromLength)
+                    }
                 }
             }
             guard received > 0, let address = MizarNetSocketAddress(storage: from) else { return }

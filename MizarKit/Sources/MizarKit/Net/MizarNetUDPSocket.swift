@@ -244,10 +244,9 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
             var from = sockaddr_storage()
             var fromLength = socklen_t(MemoryLayout<sockaddr_storage>.size)
             let received: Int = buffer.withUnsafeMutableBytes { buf in
-                withUnsafeMutablePointer(to: &from) { pointer in
-                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
-                        recvfrom(fd, buf.baseAddress, buf.count, 0, sockPointer, &fromLength)
-                    }
+                withUnsafeMutablePointer(to: &from) { ptr in
+                    let raw = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
+                    return recvfrom(fd, buf.baseAddress, buf.count, 0, raw, &fromLength)
                 }
             }
             guard received > 0, let address = MizarNetSocketAddress(storage: from) else { return }
@@ -263,10 +262,9 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
         guard descriptor >= 0 else { return nil }
         var storage = sockaddr_storage()
         var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
-        let success = withUnsafeMutablePointer(to: &storage) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                getsockname(descriptor, sockPtr, &length) == 0
-            }
+        let success = withUnsafeMutablePointer(to: &storage) { ptr -> Bool in
+            let raw = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
+            return getsockname(descriptor, raw, &length) == 0
         }
         guard success else { return nil }
         return MizarNetSocketAddress(storage: storage)
@@ -291,11 +289,10 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
         guard inet_pton(AF_INET, address.ip, &destination.sin_addr) == 1 else {
             throw MizarNetError.socketFailed(reason: "\(address.ip) is not an IPv4 address")
         }
-        let sent = withUnsafePointer(to: destination) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPointer in
-                data.withUnsafeBytes { buffer in
-                    sendto(descriptor, buffer.baseAddress, buffer.count, 0, sockPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
+        let sent = withUnsafePointer(to: destination) { ptr in
+            data.withUnsafeBytes { buffer in
+                let raw = UnsafeRawPointer(ptr).assumingMemoryBound(to: sockaddr.self)
+                return sendto(descriptor, buffer.baseAddress, buffer.count, 0, raw, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
         guard sent == data.count else {

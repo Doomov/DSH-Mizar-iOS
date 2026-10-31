@@ -261,9 +261,12 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
         guard descriptor >= 0 else { return nil }
         var storage = sockaddr_storage()
         var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
-        guard getsockname(descriptor, withUnsafeMutablePointer(to: &storage) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { $0 }
-        }, &length) == 0 else { return nil }
+        let success = withUnsafeMutablePointer(to: &storage) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                getsockname(descriptor, sockPtr, &length) == 0
+            }
+        }
+        guard success else { return nil }
         return MizarNetSocketAddress(storage: storage)
     }
 

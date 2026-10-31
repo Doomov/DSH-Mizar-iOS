@@ -1469,6 +1469,22 @@ struct SessionDetailView: View {
         await travel(to: target, anchor: anchor, proxy: proxy, generation: generation)
     }
 
+    /// Undo a jump that was overtaken before it could land.
+    ///
+    /// Every early exit from ``travel(to:anchor:proxy:generation:)`` has to put
+    /// the page back the way it found it. The dimming and the shift are what
+    /// make the jump read as travel, and a jump that never lands must not leave
+    /// them behind: an eight-percent-opacity conversation is a screen that
+    /// answers to nothing, and the operator has no way to know a tap was
+    /// overtaken.
+    private func abortJump() {
+        jumping = false
+        withAnimation(Motion.pick(.easeOut(duration: 0.18))) {
+            jumpFade = 1
+            jumpShift = 0
+        }
+    }
+
     /// The long way: dip the page, put the turn back in the conversation, jump
     /// with no animation at all, and come back up with the turn under the eye.
     ///
@@ -1505,7 +1521,12 @@ struct SessionDetailView: View {
         }
         try? await Task.sleep(for: .milliseconds(140))
         guard isCurrentJump(generation) else {
-            jumping = false
+            // Somebody else owns the page now. Give the dimming back before
+            // leaving: this returned with `jumpFade` still at eight percent,
+            // and a conversation at eight percent opacity with a shifted
+            // content offset is a screen that looks frozen -- which is exactly
+            // how "tapping a turn sometimes freezes the app" was reported.
+            abortJump()
             return
         }
 
@@ -1513,7 +1534,7 @@ struct SessionDetailView: View {
         await settleLayout()
         guard isCurrentJump(generation) else {
             stagedTurn = nil
-            jumping = false
+            abortJump()
             return
         }
         proxy.scrollTo(target, anchor: .top)

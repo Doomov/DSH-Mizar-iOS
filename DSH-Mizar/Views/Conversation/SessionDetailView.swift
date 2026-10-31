@@ -243,7 +243,7 @@ struct SessionDetailView: View {
     static let pinnedDistance: CGFloat = 40
 
     /// The coordinate space the send's flight is measured in.
-    static let space = "session.detail"
+    nonisolated static let space = "session.detail"
     /// The very end of the page, below the room left for the composer.
     static let endAnchor = "session.end"
 
@@ -897,8 +897,7 @@ struct SessionDetailView: View {
                     GeometryReader { stack in
                         Color.clear
                             .onGeometryChange(for: CGFloat?.self) { _ in
-                                guard !composerExpanded, !composerAnimating,
-                                      let shell = shellBounds.shell,
+                                guard let shell = shellBounds.shell,
                                       let chrome = shellBounds.chrome,
                                       let fieldHeight = shellBounds.fieldHeight,
                                       let insets = shellBounds.insets else { return nil }

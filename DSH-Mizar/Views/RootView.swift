@@ -25,6 +25,10 @@ struct RootView: View {
 
     /// Whether the cold-launch splash is still covering the app.
     @State private var splashDone = false
+    /// The window the mark is drawn in.
+    @State private var splashWindow = SplashWindow()
+    /// Whether the launch splash is shown at all. See the note in the task.
+    private static let splashEnabled = false
 
     var body: some View {
         Group {
@@ -46,18 +50,24 @@ struct RootView: View {
         }
         .animation(.mizarSmooth, value: phaseKey)
         .animation(.mizarSmooth, value: requiresLogin)
-        // A cover, not an overlay. The shell is hosted in its own view
-        // controller (the drawer container bridges into UIKit), and an overlay
-        // on this view draws *under* it -- which is why the splash never
-        // appeared at all: it was rendered, and the app was rendered on top of
-        // it. A full-screen cover is presented above the whole hierarchy.
-        .fullScreenCover(
-            isPresented: Binding(
-                get: { !splashDone },
-                set: { if !$0 { splashDone = true } },
-            ),
-        ) {
-            SplashView { splashDone = true }
+        // The splash lives in its own window, above the app's: an overlay and a
+        // cover both draw under the hosted shell, which is why the mark was
+        // rendered and never seen. See ``SplashWindow``.
+        .task {
+            // Off until the mark draws in a window of its own. The window works
+            // (its page and a plain circle both appear, and it covers the whole
+            // screen), but `MizarStar` renders nothing inside it -- tested with
+            // an explicit ink, an explicit display scale, and both motions. A
+            // splash that is a blank page for a second is worse than the launch
+            // we have, so it stays off rather than shipping the blank one.
+            guard !splashDone, Self.splashEnabled else {
+                splashDone = true
+                return
+            }
+            splashWindow.show(model: model) {
+                splashWindow.hide()
+                splashDone = true
+            }
         }
         // The first connect waits for a signed-in account. Connecting behind the
         // gate would put bytes on the relay as a `guest:` identity, which is the

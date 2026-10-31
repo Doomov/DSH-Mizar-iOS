@@ -25,10 +25,18 @@ final class SplashCaptureTests: XCTestCase {
             break
         }
 
-        // The real launch: terminate, start again, photograph the hold and the
-        // push.
+        // The real launch: terminate, start again, and photograph the first
+        // second and a half in slices -- the splash lives for about a second, so
+        // two frames can miss it entirely and read as "there is no splash".
         app.terminate()
         app.launch()
+        for slice in 0..<12 {
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = String(format: "slice-%02d", slice)
+            shot.lifetime = .keepAlways
+            add(shot)
+            Thread.sleep(forTimeInterval: 0.12)
+        }
         Thread.sleep(forTimeInterval: 1.0)
         let held = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         held.name = "splash-hold"

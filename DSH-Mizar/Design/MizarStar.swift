@@ -237,12 +237,14 @@ struct MizarStar: View {
     /// are the same pose on a three-fold-symmetric layer, which is what makes
     /// the repeat seamless rather than a jump once every nine seconds.
     @ViewBuilder private var running: some View {
+        let currentInk = ink
+        let currentSize = size
         if reduceMotion || !drawersStill {
-            MizarStarPose(palette: ink, size: size)
+            MizarStarPose(palette: currentInk, size: currentSize)
         } else {
-            MizarStarPose(palette: ink, size: size)
+            MizarStarPose(palette: currentInk, size: currentSize)
                 .keyframeAnimator(initialValue: 0.0, repeating: true) { _, angle in
-                    MizarStarPose(front: angle, back: -angle, palette: ink, size: size)
+                    MizarStarPose(front: angle, back: -angle, palette: currentInk, size: currentSize)
                 } keyframes: { _ in
                     LinearKeyframe(360, duration: StarMetrics.revolution)
                 }

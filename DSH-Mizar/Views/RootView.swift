@@ -36,6 +36,13 @@ struct RootView: View {
                 WelcomeGateView()
             } else {
                 phaseContent
+                // The app arrives as the camera passes the mark: a touch small
+                // and a touch transparent, settling as the splash goes. Without
+                // it the splash leaves and a finished screen is simply there,
+                // which is a cut rather than a landing.
+                .scaleEffect(splashDone ? 1 : 1.06)
+                .opacity(splashDone ? 1 : 0.001)
+                .animation(.easeOut(duration: 0.45), value: splashDone)
             }
         }
         .animation(.mizarSmooth, value: phaseKey)

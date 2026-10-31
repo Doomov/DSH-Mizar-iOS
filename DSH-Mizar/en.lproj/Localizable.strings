@@ -646,3 +646,8 @@
 "Refresh computers" = "Refresh computers";
 "Commands and attachments" = "Commands and attachments";
 "Compact the conversation" = "Compact the conversation";
+"To compact, use /compact in DSH on the computer." = "To compact, use /compact in DSH on the computer.";
+"Total tokens" = "Total tokens";
+"Active days" = "Active days";
+"Busiest hour" = "Busiest hour";
+"Top model" = "Top model";

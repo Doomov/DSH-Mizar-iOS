@@ -56,11 +56,10 @@ struct HomeModelSnapshotTests {
     }
 
     @Test func homeModelPillNamesTheModelItWillStartOn() throws {
-        try AppSourceContract.expectIdentifiers(
-            ["home.field", "home.send", "home.model"],
-            in: "DSH-Mizar/Views/Shell/HomeView.swift",
-        )
-
+        // The home page no longer carries a composer: its model pill went with
+        // it, and the picker is reached from a conversation. What is left to
+        // check is the label composition the pill used, which the composer's
+        // pill still draws.
         // The UI test asserted the label contains the model's id;
         // `modelPillLabel` is what composes it, and the same composition feeds
         // the pixels below.

@@ -2,14 +2,14 @@
 //  HomeView.swift
 //  DSH-Mizar
 //
-//  The conversation pane with no conversation in it -- which is a place to
-//  start one, not an empty screen.
+//  The conversation pane with no conversation in it.
 //
-//  The computer's name, the mark lighting up dot-outward as if finding it, and the
-//  composer, ready: type, choose where the work happens, send. Sending starts a
-//  session in that workspace with those words as its first prompt and opens it
-//  -- the operator's words flying up into the new conversation as they would in
-//  any other.
+//  It used to open with the mark, the computer's name and a composer -- an
+//  invitation to start work. The operator's answer was that this is a *report*,
+//  not a form: what they want on opening the app is the month, in figures, the
+//  way the desktop's home page shows it. So the top of the page is six readings
+//  folded from the same history the heatmap draws, and the only thing to press
+//  is the way back into the last conversation.
 //
 
 import SwiftUI
@@ -17,38 +17,24 @@ import MizarKit
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
-    /// The full workspace picker, for a directory that is not on offer, out of
-    /// the workspace chip.
-    @State private var choosingElsewhere = false
-    @State private var draft = ""
-    @State private var workspace: String?
-    @State private var showingModel = false
-    @State private var sending = false
-    @State private var sends = 0
-    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 16)
-            greeting
-            Spacer(minLength: 16)
-            // The month, two thirds of the page: the reason to open the app is
-            // the work, and the work is what this is.
+            UsageReadings(
+                overview: model.usageOverview,
+                loading: model.usageLoading,
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            // The month, the reason to open the app, under the readings.
             UsageHeatmap(
                 days: model.usageOverview?.days ?? [],
                 loading: model.usageLoading,
             )
             .padding(.horizontal, 18)
             .frame(maxHeight: .infinity)
-            if model.workspaceChoices.isEmpty {
-                Text("Start a session on your computer, then refresh.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 10)
-            }
-            composer
-            // The bottom third: the way back into the conversation that was
-            // last on screen, which is what "continue" usually means.
+            // The bottom: the way back into the conversation that was last on
+            // screen, which is what "continue" usually means.
             LastSessionButton(session: lastSession, title: lastSessionTitle) { id in
                 model.selectedSessionId = id
             }
@@ -57,18 +43,11 @@ struct HomeView: View {
             .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity)
-        .contentShape(.rect)
-        .onTapGesture { focused = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if workspace == nil { workspace = model.workspaceChoices.first?.path }
             Task { await model.loadUsageOverview() }
         }
-        .onChange(of: model.workspaceChoices.map(\.path)) { _, paths in
-            if workspace == nil || !paths.contains(workspace ?? "") { workspace = paths.first }
-        }
-        .mizarFeedback(.impact(weight: .light), trigger: sends)
     }
 
     /// The conversation the operator was last in, as the home page's door.
@@ -81,179 +60,121 @@ struct HomeView: View {
     private var lastSessionTitle: String? {
         lastSession.flatMap { model.titles[$0.sessionId] }
     }
+}
 
-    private var greeting: some View {
-        VStack(spacing: 18) {
-            // The greeting is the screen arriving, so the mark throws once
-            // rather than turning for as long as it is on screen.
-            MizarStar(motion: .flick, size: 64)
-            VStack(spacing: 6) {
-                Text(model.host?.displayName ?? model.welcome?.hostName ?? "DSH-Mizar")
-                    .font(.largeTitle.weight(.bold))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .accessibilityAddTraits(.isHeader)
-                Text("What should the agent work on?")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+/// The month in six readings, above the heatmap.
+///
+/// The same six the desktop's home page shows: how many conversations, how many
+/// messages, how many tokens, how many days had any work, when in the day it
+/// happens, and which model did most of it. Every one is folded from the
+/// history the heatmap draws -- no second request, no second source -- so the
+/// figures cannot disagree with the squares under them.
+private struct UsageReadings: View {
+    let overview: UsageOverview?
+    let loading: Bool
+
+    /// Three across, two down: a phone reads six short figures as a block.
+    private let columns = [
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10),
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 10) {
+            reading("Sessions", sessions)
+            reading("Messages", messages)
+            reading("Total tokens", tokens)
+            reading("Active days", activeDays)
+            reading("Busiest hour", busiestHour)
+            reading("Top model", topModel, compact: true)
         }
-        .padding(.horizontal, 32)
-        .transition(.rise)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.readings")
     }
 
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField("Ask your agent…", text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...8)
-                .focused($focused)
-                .padding(.horizontal, 16)
-                .padding(.top, 13)
-                .padding(.bottom, 6)
-                .accessibilityIdentifier("home.field")
-
-            HStack(spacing: 6) {
-                workspaceMenu
-                modelPill
-                Spacer(minLength: 4)
-                Button {
-                    Task { await send() }
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(canSend ? Theme.onAccent : .secondary)
-                        .symbolEffect(.bounce.up, value: sends)
-                        .frame(width: 34, height: 34)
-                        .background(Circle().fill(canSend ? Color.accentColor : Color(.tertiarySystemFill)))
-                        .scaleEffect(canSend ? 1 : 0.92)
-                        .overlay {
-                            if sending { ProgressView().controlSize(.small).tint(Theme.onAccent) }
-                        }
-                        .contentShape(.circle)
-                }
-                .buttonStyle(.pressable(scale: 0.88))
-                .disabled(!canSend)
-                .animation(.mizarBouncy, value: canSend)
-                .accessibilityLabel(Text("Send"))
-                .accessibilityIdentifier("home.send")
-            }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-        }
-        .contentShape(.rect)
-        .onTapGesture { focused = true }
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
-        .padding(.horizontal, 10)
-        .padding(.bottom, 6)
-    }
-
-    /// Where the new session will work: one button, labelled with its choice,
-    /// opening the list of the computer's workspaces.
-    private var workspaceMenu: some View {
-        Menu {
-            ForEach(model.workspaceChoices) { choice in
-                Button {
-                    withMizarAnimation(.mizarSnappy) { workspace = choice.path }
-                } label: {
-                    if choice.path == workspace {
-                        Label(choice.title, systemImage: "checkmark")
-                    } else {
-                        Text(choice.title)
-                    }
-                }
-            }
-            Divider()
-            Button { choosingElsewhere = true } label: {
-                Label("Somewhere else…", systemImage: "folder.badge.plus")
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "folder")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(workspaceTitle)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .contentTransition(.interpolate)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 11)
-            .frame(height: 32)
-            .background(.fill.tertiary, in: Capsule())
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        // One element, so the workspace's name on it is not a second static
-        // text with that name on the screen.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Workspace, \(workspaceTitle)"))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("home.workspace")
-        .mizarPopover(isPresented: $choosingElsewhere, arrowEdge: .bottom) {
-            NewSessionView()
-                .frame(width: PopoverSize.compact.width, height: 440)
-        }
-    }
-
-    private var workspaceTitle: String {
-        model.workspaceChoices.first { $0.path == workspace }?.title ?? String(localized: "Choose a workspace")
-    }
-
-    /// Which model the session will start on.
+    /// One figure.
     ///
-    /// The choice this phone made for the next session first, then the host's
-    /// own default. The pill is never blank: "which model will answer" is the
-    /// question it exists to answer, and "Model" alone is only what it says
-    /// before the catalogue has been read.
-    private var modelLabel: String {
-        if let choice = model.newSessionModel {
-            return modelPillLabel(model: choice.model, effort: choice.effort)
+    /// - Parameters:
+    ///   - title: already localised.
+    ///   - value: the figure, formatted for reading.
+    ///   - compact: whether the value is a name rather than a number, which is
+    ///     set smaller so a long model id fits its card.
+    private func reading(_ title: String, _ value: String, compact: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(compact ? .footnote.weight(.semibold) : .title3.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(compact ? 0.6 : 0.7)
+                .contentTransition(.numericText())
         }
-        guard let selection = model.modelCatalog?.defaultSelection else {
-            return String(localized: "Model")
-        }
-        return modelPillLabel(model: selection.model, effort: selection.reasoningEffort)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            .fill.quaternary,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous),
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.reading.\(title)")
     }
 
-    /// The model control, drawn exactly as the session composer draws it.
-    private var modelPill: some View {
-        ModelPill(label: modelLabel) { showingModel = true }
-            // The model name is the narrower fact of the two on this row, but it
-            // is the one that changes meaning when truncated to "deepseek…", so
-            // the workspace title gives way first.
-            .layoutPriority(1)
-            .mizarPopover(isPresented: $showingModel, arrowEdge: .bottom) {
-                // No session yet, so the sheet holds the choice rather than
-                // sending it: `startSession` applies it once the host has an id.
-                ModelPickerView(sessionId: nil, stats: nil) { choice in
-                    model.chooseNewSessionModel(
-                        provider: choice.provider,
-                        model: choice.model,
-                        effort: choice.effort,
-                    )
-                }
-                .frame(width: PopoverSize.list.width, height: PopoverSize.list.height)
+    private var sessions: String {
+        guard let overview else { return loading ? "…" : "—" }
+        return overview.sessions.formatted()
+    }
+
+    private var messages: String {
+        guard let overview else { return loading ? "…" : "—" }
+        return overview.days.reduce(0) { $0 + $1.messages }.formatted()
+    }
+
+    private var tokens: String {
+        guard let overview else { return loading ? "…" : "—" }
+        let total = overview.days.reduce(0) { $0 + $1.tokens }
+        return total.formatted(.number.notation(.compactName))
+    }
+
+    private var activeDays: String {
+        guard let overview else { return loading ? "…" : "—" }
+        return overview.days.count.formatted()
+    }
+
+    /// The hour the month spent most of its messages in, as `HH:00`.
+    private var busiestHour: String {
+        guard let overview else { return loading ? "…" : "—" }
+        var buckets = Array(repeating: 0, count: 24)
+        for day in overview.days {
+            for (hour, count) in (day.hours ?? []).enumerated() where hour < 24 {
+                buckets[hour] += count
             }
-            .accessibilityLabel("Model, \(modelLabel)")
-            .accessibilityIdentifier("home.model")
+        }
+        guard let peak = buckets.max(), peak > 0, let hour = buckets.firstIndex(of: peak) else {
+            return "—"
+        }
+        return String(format: "%02d:00", hour)
     }
 
-    private var canSend: Bool {
-        !sending && workspace != nil && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// The model that answered most of the month's messages.
+    private var topModel: String {
+        guard let overview else { return loading ? "…" : "—" }
+        var byModel: [String: Int] = [:]
+        for day in overview.days {
+            for usage in day.models ?? [] {
+                byModel[usage.model, default: 0] += usage.messages
+            }
+        }
+        return byModel.max { $0.value < $1.value }?.key ?? "—"
     }
+}
 
-    private func send() async {
-        guard let workspace, canSend else { return }
-        let prompt = draft
-        sending = true
-        sends += 1
-        withMizarAnimation(.mizarSmooth) { draft = "" }
-        let started = await model.startSession(cwd: workspace, prompt: prompt)
-        if started == nil { draft = prompt }
-        sending = false
-    }
+#Preview {
+    UsageReadings(overview: nil, loading: true)
+        .padding()
 }

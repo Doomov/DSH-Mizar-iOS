@@ -646,3 +646,8 @@
 "Refresh computers" = "刷新电脑列表";
 "Commands and attachments" = "命令与附件";
 "Compact the conversation" = "压缩会话";
+"To compact, use /compact in DSH on the computer." = "压缩请在电脑上的 DSH 里用 /compact 发起。";
+"Total tokens" = "总 token";
+"Active days" = "活跃天数";
+"Busiest hour" = "高峰时段";
+"Top model" = "常用模型";

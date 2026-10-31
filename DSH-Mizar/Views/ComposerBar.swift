@@ -56,8 +56,6 @@ struct ComposerBar: View {
     /// is tapped: the account screen, where the plan can be bought. Not a silent
     /// no-op -- a locked button that does nothing is a bug report.
     var onLockedAttachment: () -> Void = {}
-    /// Ask the session to compact its history. Sent as DSH's own command.
-    var onCompact: () -> Void = {}
 
     /// DSH's own commands. The slash forms are what the host parses; the titles
     /// are what the operator is choosing between. They are catalogue keys
@@ -136,14 +134,7 @@ struct ComposerBar: View {
         .fixedSize()
         .disabled(stats?.context == nil)
         .mizarPopover(isPresented: $showingContext, arrowEdge: .bottom) {
-            ContextDetail(stats: stats) {
-                // The one action the figure is for. DSH's own slash command
-                // rather than a second protocol: compacting is something the
-                // agent decides how to do, and a phone that reimplemented it
-                // would be a second opinion about the operator's history.
-                showingContext = false
-                onCompact()
-            }
+            ContextDetail(stats: stats)
         }
         .accessibilityLabel("Context, \(contextLabel)")
         .accessibilityIdentifier("composer.context")
@@ -406,8 +397,6 @@ private struct Breathing: ViewModifier {
 /// What the context figure is made of.
 private struct ContextDetail: View {
     let stats: SessionStatsFrame?
-    /// Asked to compact the conversation.
-    var onCompact: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -439,20 +428,18 @@ private struct ContextDetail: View {
                     row(String(localized: "Messages"), breakdown.messageTokens.formatted(.number.grouping(.automatic)))
                 }
                 Divider()
-                Button {
-                    onCompact()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.down.right.and.arrow.up.left")
-                        Text("Compact the conversation")
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.regular)
-                .foregroundStyle(Theme.onAccent)
-                .accessibilityIdentifier("context.compact")
+                // No button, because there is nothing for it to call. DSH's
+                // compaction is a command its own window runs before the next
+                // turn; neither the protocol nor the plugin exposes it, so a
+                // button here could only send the text "/compact" as a prompt --
+                // which the model reads and the conversation does not compact.
+                // A control that types a magic word at the model is worse than
+                // no control: it reports success and changes nothing.
+                Text("To compact, use /compact in DSH on the computer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("context.compactHint")
             } else {
                 Text("No context figure yet.")
                     .font(.caption)

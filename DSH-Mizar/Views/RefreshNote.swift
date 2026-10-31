@@ -28,12 +28,20 @@ struct RefreshUnreachableNote: View {
                 .accessibilityHidden(true)
             Text("Can't reach the desktop. Try reconnecting.")
                 .font(.subheadline)
+                // A sentence that wraps to whatever it needs. The width below is
+                // the measure, not a box: the first version pinned the text to a
+                // fixed frame and the popover sized itself to the *unwrapped*
+                // intrinsic width, so the second and third lines were drawn
+                // outside the bubble -- the note read as a clipped strip.
                 .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(nil)
+                .layoutPriority(1)
                 .accessibilityIdentifier("refresh.unreachable")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .frame(width: 236, alignment: .leading)
+        .frame(idealWidth: 260, maxWidth: 260, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

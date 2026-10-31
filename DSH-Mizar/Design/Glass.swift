@@ -19,6 +19,22 @@ enum ScrollEdgeEffectOption {
     case soft
 }
 
+struct ScrollEdgeEffectDirectionShim: ExpressibleByArrayLiteral {
+    init(arrayLiteral elements: ScrollEdgeEffectDirectionShim...) {}
+    init() {}
+    static var top: ScrollEdgeEffectDirectionShim { ScrollEdgeEffectDirectionShim() }
+    static var bottom: ScrollEdgeEffectDirectionShim { ScrollEdgeEffectDirectionShim() }
+    static var vertical: ScrollEdgeEffectDirectionShim { ScrollEdgeEffectDirectionShim() }
+    static var all: ScrollEdgeEffectDirectionShim { ScrollEdgeEffectDirectionShim() }
+}
+
+enum SafeAreaBarEdge {
+    case top
+    case bottom
+    case leading
+    case trailing
+}
+
 extension View {
     /// A capsule of glass.
     func liquidCapsule(interactive: Bool = false) -> some View {
@@ -49,7 +65,11 @@ extension View {
         self.background(.ultraThinMaterial, in: shape)
     }
 
-    func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectOption = .soft, for axis: Axis.Set = .vertical) -> some View {
+    func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectOption = .soft, for edge: ScrollEdgeEffectDirectionShim = .vertical) -> some View {
+        self
+    }
+
+    func safeAreaBar<Content: View>(edge: SafeAreaBarEdge = .top, spacing: CGFloat = 0, @ViewBuilder content: () -> Content) -> some View {
         self
     }
 }

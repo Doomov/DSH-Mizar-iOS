@@ -191,7 +191,10 @@ public enum ZipWriter {
         let year = max(1980, min(2107, parts.year ?? 1980))
         let month = max(1, min(12, parts.month ?? 1))
         let day = max(1, min(31, parts.day ?? 1))
-        let time = UInt16((parts.hour ?? 0) << 11 | (parts.minute ?? 0) << 5 | (parts.second ?? 0) / 2)
+        let h = (parts.hour ?? 0) << 11
+        let m = (parts.minute ?? 0) << 5
+        let s = (parts.second ?? 0) / 2
+        let time = UInt16(h | m | s)
         let stamp = UInt16((year - 1980) << 9 | month << 5 | day)
         return (time, stamp)
     }

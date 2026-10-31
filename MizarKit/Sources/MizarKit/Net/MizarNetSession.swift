@@ -179,7 +179,8 @@ public actor MizarNetSession: MizarNetStream {
         // the authenticated data is part of the sealed bytes — so the
         // layout is computed first, deterministically, and the seal happens
         // against exactly the header the wire will carry.
-        let payloadLength = 4 + 1 + min(acks.count, MizarNetPunchPacket.maxAcksPerPacket) * 4 + 4 + chunk.count + 16
+        let ackCount = min(acks.count, MizarNetPunchPacket.maxAcksPerPacket)
+        let payloadLength = 4 + 1 + (ackCount * 4) + 4 + chunk.count + 16
         let header = MizarNetPunchPacket.header(type: .data, connectionId: connectionId, payloadLength: payloadLength)
         var authenticated = header
         authenticated.appendUInt32(packetNumber)

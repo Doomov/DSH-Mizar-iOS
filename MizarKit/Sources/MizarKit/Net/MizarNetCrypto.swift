@@ -38,11 +38,7 @@ import Foundation
 /// `ChaCha20Poly1305` to `ChaChaPoly` — same algorithm, same wire format,
 /// new spelling. The shim keeps this file building on either generation;
 /// the algorithm is identical, so a session is interoperable across them.
-#if compiler(>=6.4)
 typealias MizarNetAEAD = ChaChaPoly
-#else
-typealias MizarNetAEAD = ChaCha20Poly1305
-#endif
 
 enum MizarNetCrypto {
     /// The info string baked into every derived key. Part of the wire

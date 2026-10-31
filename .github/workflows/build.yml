@@ -1,0 +1,45 @@
+name: Build Patched DSH-Mizar iOS IPA
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Unsigned IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+
+      - name: Build iOS App
+        run: |
+          set -e
+          mkdir -p build/Payload
+          OTHER_SWIFT_FLAGS='-disable-sandbox' xcodebuild \
+            -project DSH-Mizar.xcodeproj \
+            -scheme DSH-Mizar \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          # 复制编译产物并打包为 IPA
+          APP_PATH=$(find build/DerivedData -name "DSH-Mizar.app" -type d | head -n 1)
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" build/Payload/
+          cd build
+          zip -qry DSH-Mizar-Patched.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH-Mizar-Patched-0.9.8
+          path: build/DSH-Mizar-Patched.ipa
+          retention-days: 7

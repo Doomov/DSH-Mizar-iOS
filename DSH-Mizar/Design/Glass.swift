@@ -54,8 +54,19 @@ extension View {
     }
 }
 
-extension ButtonStyle where Self == BorderedProminentButtonStyle {
-    static var glassProminent: BorderedProminentButtonStyle { .borderedProminent }
+struct GlassProminentButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.accentColor, in: Capsule())
+            .foregroundStyle(.white)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+    }
+}
+
+extension ButtonStyle where Self == GlassProminentButtonStyle {
+    static var glassProminent: GlassProminentButtonStyle { GlassProminentButtonStyle() }
 }
 
 /// Groups neighbouring glass so it blends instead of meeting in a seam.

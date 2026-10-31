@@ -33,10 +33,19 @@ struct HomeView: View {
             )
             .padding(.horizontal, 18)
             .frame(maxHeight: .infinity)
-            // The bottom: the way back into the conversation that was last on
-            // screen, which is what "continue" usually means.
-            LastSessionButton(session: lastSession, title: lastSessionTitle) { id in
-                model.selectedSessionId = id
+            // The bottom: the way back into the conversations that were last on
+            // screen. Three, not one: "continue" is usually "the one I was in",
+            // and when it is not, the next two are a tap away instead of a trip
+            // through the sidebar.
+            VStack(spacing: 6) {
+                ForEach(Array(recentSessions.enumerated()), id: \.element.sessionId) { index, session in
+                    LastSessionButton(
+                        session: session,
+                        title: model.titles[session.sessionId],
+                        open: { model.selectedSessionId = $0 },
+                        leads: index == 0,
+                    )
+                }
             }
             .padding(.horizontal, 18)
             .padding(.top, 10)
@@ -50,15 +59,14 @@ struct HomeView: View {
         }
     }
 
-    /// The conversation the operator was last in, as the home page's door.
-    private var lastSession: SessionRow? {
-        model.sessions
-            .filter { !$0.blank }
-            .max { $0.updatedAt < $1.updatedAt }
-    }
-
-    private var lastSessionTitle: String? {
-        lastSession.flatMap { model.titles[$0.sessionId] }
+    /// The three most recently touched conversations, newest first.
+    private var recentSessions: [SessionRow] {
+        Array(
+            model.sessions
+                .filter { !$0.blank && !$0.isSubagent }
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(3),
+        )
     }
 }
 

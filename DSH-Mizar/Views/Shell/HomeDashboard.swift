@@ -68,14 +68,16 @@ struct UsageHeatmap: View {
             // a stamp-sized month inside it -- the figure the page exists for,
             // drawn as a footnote.
             GeometryReader { proxy in
+                // Height follows the rows at this size; the card no longer
+                // stretches to fill whatever the page has left.
                 let gap: CGFloat = 5
                 let across = CGFloat(max(1, columns.count))
-                let side = max(
-                    6,
-                    min(
-                        (proxy.size.width - gap * (across - 1)) / across,
-                        (proxy.size.height - gap * 6) / 7,
-                    ),
+                // A month at a glance, not a poster. The cells grow with the
+                // width only up to a readable size: past that the grid is a
+                // wall of squares, and the readings above it are the point.
+                let side = min(
+                    26,
+                    max(6, (proxy.size.width - gap * (across - 1)) / across),
                 )
                 HStack(alignment: .top, spacing: gap) {
                     ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
@@ -185,6 +187,9 @@ struct LastSessionButton: View {
     let title: String?
     /// Called with the session's id.
     let open: (String) -> Void
+    /// Whether this is the first of several: only the first explains itself,
+    /// because three identical subtitles is a column of noise.
+    var leads: Bool = true
 
     private var label: String {
         guard session != nil else { return String(localized: "No conversation yet") }
@@ -205,9 +210,11 @@ struct LastSessionButton: View {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    Text("Continue where you left off")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if leads {
+                        Text("Continue where you left off")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
@@ -215,7 +222,7 @@ struct LastSessionButton: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14)
-            .frame(height: 62)
+            .frame(height: leads ? 62 : 48)
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }

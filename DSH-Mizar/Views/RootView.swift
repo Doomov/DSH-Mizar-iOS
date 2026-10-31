@@ -36,25 +36,28 @@ struct RootView: View {
                 WelcomeGateView()
             } else {
                 phaseContent
-                // The app arrives as the camera passes the mark: a touch small
-                // and a touch transparent, settling as the splash goes. Without
-                // it the splash leaves and a finished screen is simply there,
-                // which is a cut rather than a landing.
-                .scaleEffect(splashDone ? 1 : 1.06)
-                .opacity(splashDone ? 1 : 0.001)
-                .animation(.easeOut(duration: 0.45), value: splashDone)
+                // The app is *under* the splash, not hidden by it: the splash
+                // is a page with a hole in it, and the hole is what the camera
+                // travels through. So the content is fully drawn from the first
+                // frame, and only settles by a hair as the splash leaves.
+                .scaleEffect(splashDone ? 1 : 1.03)
+                .animation(.easeOut(duration: 0.4), value: splashDone)
             }
         }
         .animation(.mizarSmooth, value: phaseKey)
         .animation(.mizarSmooth, value: requiresLogin)
-        // The splash is an overlay rather than a phase: it has to stay on top
-        // while the screen under it is being built, and leave on its own
-        // timing rather than the phase's.
-        .overlay {
-            if !splashDone {
-                SplashView { splashDone = true }
-                    .transition(.opacity)
-            }
+        // A cover, not an overlay. The shell is hosted in its own view
+        // controller (the drawer container bridges into UIKit), and an overlay
+        // on this view draws *under* it -- which is why the splash never
+        // appeared at all: it was rendered, and the app was rendered on top of
+        // it. A full-screen cover is presented above the whole hierarchy.
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { !splashDone },
+                set: { if !$0 { splashDone = true } },
+            ),
+        ) {
+            SplashView { splashDone = true }
         }
         // The first connect waits for a signed-in account. Connecting behind the
         // gate would put bytes on the relay as a `guest:` identity, which is the

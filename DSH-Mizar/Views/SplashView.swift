@@ -33,10 +33,15 @@ struct SplashView: View {
     @Environment(AppModel.self) private var model
 
     /// How far the mark has come towards the camera. 1 is the resting size.
-    @State private var zoom: CGFloat = 1
-    /// How far the mark has faded, which happens as the camera passes it.
-    @State private var fade: Double = 1
-    /// Whether the camera move has started, so the turn can stop.
+    /// How large the transparent hole is, as a multiple of the mark's own size.
+    /// 1 is "exactly under the mark"; 30 is past the edges of any screen.
+    @State private var hole: CGFloat = 1
+    /// The opaque mark's opacity. It is what makes the icon opaque; the moment
+    /// it reaches zero the icon is a hole.
+    @State private var mark: Double = 1
+    /// The wind-up before the push.
+    @State private var windUp: CGFloat = 1
+    /// Whether the turn has stopped, so the push is a still shape.
     @State private var leaving = false
     /// How long the wait for the app is allowed to last.
     private static let patience = Duration.seconds(6)
@@ -64,15 +69,20 @@ struct SplashView: View {
 
     var body: some View {
         ZStack {
+            // The page. It is drawn full-screen and behind everything the app
+            // puts up, so what the operator sees during the hold is this and
+            // nothing else.
             Theme.paneBackground
-                .ignoresSafeArea()
-            // The mark is the icon's own drawing, at the size the icon would be
-            // if it were the whole screen: big enough that its arms reach past
-            // the frame by the end of the move, so the camera is inside it.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The mark. It spins while the app is getting ready, and it is what
+            // the camera travels through.
             MizarStar(motion: leaving ? .still : .running, size: 96)
-                .scaleEffect(zoom)
-                .opacity(fade)
+                .scaleEffect(hole)
+                .opacity(mark)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paneBackground)
+        .ignoresSafeArea()
         .task {
             if Self.skipped {
                 onFinished()
@@ -95,21 +105,20 @@ struct SplashView: View {
             if ContinuousClock.now < earliest {
                 try? await Task.sleep(until: earliest, clock: .continuous)
             }
-            // A frame between the two states, so the turn stops before the
-            // move rather than in the middle of it.
+            // 1. The icon becomes transparent: the mark leaves, the hole stays
+            //    exactly where it was, so nothing moves and nothing blinks.
             leaving = true
-            try? await Task.sleep(for: .milliseconds(16))
-            // The camera: accelerating the whole way, which is what makes it
-            // read as moving *through* the mark rather than as the mark growing.
-            // The fade starts late and finishes with the move, so the arms are
-            // still legible while they pass the edges of the frame.
-            withAnimation(.easeIn(duration: 0.76)) {
-                zoom = 26
-            }
-            withAnimation(.easeIn(duration: 0.5).delay(0.24)) {
-                fade = 0
-            }
-            try? await Task.sleep(for: .milliseconds(780))
+            withAnimation(.easeOut(duration: 0.18)) { mark = 0 }
+            try? await Task.sleep(for: .milliseconds(190))
+            // 2. The wind-up: a small pull back, which is what makes the push
+            //    read as acceleration rather than as a zoom that was already
+            //    running.
+            withAnimation(.easeIn(duration: 0.16)) { windUp = 0.92 }
+            try? await Task.sleep(for: .milliseconds(170))
+            // 3. Through it. The hole opens past the edges of the frame on an
+            //    accelerating curve -- a camera, not a growing shape.
+            withAnimation(.easeIn(duration: 0.62)) { hole = 30 }
+            try? await Task.sleep(for: .milliseconds(640))
             onFinished()
         }
         .accessibilityHidden(true)

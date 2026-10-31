@@ -154,7 +154,12 @@ struct SidebarView: View {
             .mizarPopover(isPresented: $showingSync) {
                 SyncProgressSheet()
             }
-            .mizarPopover(isPresented: $showingUnreachable, arrowEdge: .bottom) {
+            // `.top`, not `.bottom`: the arrow edge names where the arrow sits,
+            // so `.bottom` puts the window *above* the button -- and this button
+            // is at the top of the screen, where the window is clipped by the
+            // safe area. That is what the note looked like: a sentence cut in
+            // half above the title bar.
+            .mizarPopover(isPresented: $showingUnreachable, arrowEdge: .top) {
                 RefreshUnreachableNote()
             }
         }

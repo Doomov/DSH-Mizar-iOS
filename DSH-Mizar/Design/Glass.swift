@@ -2,15 +2,22 @@
 //  Glass.swift
 //  DSH-Mizar
 //
-//  Liquid Glass, used where it belongs.
-//
-//  One rule: glass is for what floats above the content -- the bars, the
-//  composer, the dock of pending requests, the sidebar's controls. Content stays
-//  solid. A screen made of glass is a screen of reflections; the effect reads as
-//  grand precisely because there is so little of it.
+//  Liquid Glass and compatibility shims for iOS 18 / Xcode 16.
 //
 
 import SwiftUI
+
+struct GlassShim {
+    func tint(_ color: Color?) -> Self { self }
+    func interactive(_ val: Bool = true) -> Self { self }
+    static var regular: GlassShim { GlassShim() }
+}
+
+typealias Glass = GlassShim
+
+enum ScrollEdgeEffectOption {
+    case soft
+}
 
 extension View {
     /// A capsule of glass.
@@ -19,17 +26,6 @@ extension View {
     }
 
     /// Glass in any shape, or nothing at all.
-    ///
-    /// - Parameters:
-    ///   - shape: what to pour it into.
-    ///   - tint: a colour the glass carries, for surfaces that mean something
-    ///     (an approval, a question).
-    ///   - interactive: whether the glass answers a touch -- it swells and
-    ///     catches the light under the finger. For controls, not for panels.
-    ///   - condition: when false the view is returned untouched, which is how a
-    ///     control that fills itself with a solid colour avoids a layer of glass
-    ///     underneath it.
-    /// - Returns: the surfaced view.
     @ViewBuilder
     func liquidSurface<S: Shape>(
         in shape: S,
@@ -48,10 +44,37 @@ extension View {
     func liquidCard(radius: CGFloat = Theme.Radius.card, tint: Color? = nil) -> some View {
         liquidSurface(in: RoundedRectangle(cornerRadius: radius, style: .continuous), tint: tint)
     }
+
+    func glassEffect(_ effect: Any? = nil, in shape: some Shape) -> some View {
+        self.background(.ultraThinMaterial, in: shape)
+    }
+
+    func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectOption = .soft, for axis: Axis.Set = .vertical) -> some View {
+        self
+    }
 }
 
-/// Groups neighbouring glass so it blends instead of meeting in a seam, and so
-/// pieces with a shared `glassEffectID` morph into one another.
+extension ButtonStyle where Self == BorderedProminentButtonStyle {
+    static var glassProminent: BorderedProminentButtonStyle { .borderedProminent }
+}
+
+/// Groups neighbouring glass so it blends instead of meeting in a seam.
+struct GlassEffectContainer<Content: View>: View {
+    var spacing: CGFloat = 8
+    @ViewBuilder var content: () -> Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            content()
+        }
+    }
+}
+
 struct GlassRow<Content: View>: View {
     var spacing: CGFloat = 8
     @ViewBuilder var content: Content

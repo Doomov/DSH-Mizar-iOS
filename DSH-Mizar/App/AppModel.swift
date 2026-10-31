@@ -12,7 +12,7 @@
 
 import Foundation
 import Observation
-import UserNotifications
+@preconcurrency import UserNotifications
 import MizarKit
 
 @MainActor

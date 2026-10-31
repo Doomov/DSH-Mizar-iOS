@@ -79,7 +79,7 @@ final class LocalAgentController {
     /// kernel's own bookkeeping sits one level down, in `.mizar/`, and is not a
     /// workspace. Before this, the root was in Application Support: invisible
     /// to the user, and impossible to look at without Xcode.
-    static var defaultRootURL: URL {
+    nonisolated static var defaultRootURL: URL {
         let base = try? FileManager.default.url(
             for: .documentDirectory,
             in: .userDomainMask,

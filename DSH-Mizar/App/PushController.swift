@@ -124,7 +124,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
     ) {
         let content = notification.request.content
         let userInfo = content.userInfo
@@ -167,7 +167,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping @Sendable () -> Void,
+        withCompletionHandler completionHandler: @escaping () -> Void,
     ) {
         let sessionID = response.notification.request.content
             .userInfo["sessionId"] as? String

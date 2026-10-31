@@ -20,15 +20,13 @@ jobs:
         run: |
           set -e
           mkdir -p build/Payload
-          OTHER_SWIFT_FLAGS='-disable-sandbox' xcodebuild \
+          OTHER_SWIFT_FLAGS='-disable-sandbox -Xfrontend -solver-expression-time-threshold=120' xcodebuild \
             -project DSH-Mizar.xcodeproj \
             -scheme DSH-Mizar \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
             IPHONEOS_DEPLOYMENT_TARGET=18.0 \
-            SWIFT_COMPILATION_MODE=singlefile \
-            SWIFT_OPTIMIZATION_LEVEL=-Onone \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO

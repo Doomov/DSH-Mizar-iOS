@@ -96,7 +96,6 @@ public protocol MizarNetDatagramSocket: Sendable {
 }
 
 /// A bound UDP socket that yields what arrives.
-@_optimize(none)
 public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     /// Every datagram that arrives, in arrival order.
     public nonisolated let events: AsyncStream<MizarNetDatagram>
@@ -200,6 +199,7 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     /// - Parameter port: the port to bind, or `nil` for any.
     /// - Throws: ``MizarNetError/socketFailed(reason:)`` when the socket
     ///   cannot be created or bound.
+    @_optimize(none)
     public func bind(port: UInt16? = nil) throws {
         guard descriptor < 0 else { return }
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -259,6 +259,7 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     }
 
     /// The address the socket is bound to. `nil` before ``bind(port:)``.
+    @_optimize(none)
     public var localAddress: MizarNetSocketAddress? {
         guard descriptor >= 0 else { return nil }
         var storage = sockaddr_storage()
@@ -279,6 +280,7 @@ public actor MizarNetUDPSocket: MizarNetDatagramSocket {
     ///   - address: where to send it.
     /// - Throws: ``MizarNetError/socketFailed(reason:)`` when the write
     ///   fails or goes out partially.
+    @_optimize(none)
     public func send(_ data: Data, to address: MizarNetSocketAddress) throws {
         guard descriptor >= 0 else {
             throw MizarNetError.socketFailed(reason: "the socket is not bound")
